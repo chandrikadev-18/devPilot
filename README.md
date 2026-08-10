@@ -1,19 +1,20 @@
-# DevPilot v0.1 - Project Scanner
+# DevPilot
 
-DevPilot v0.1 is a lightweight Python command-line tool that recursively scans a software project directory and collects basic information about the repository. It ignores common unnecessary directories (like `.git`, `node_modules`, `venv`, etc.) to provide accurate and fast project statistics.
+DevPilot is an AI-powered developer assistant (currently in early stages).
 
 ## Features
-- Recursively scans directories to discover files.
-- Ignores typical build/environment directories.
-- Extracts file metadata (relative path, absolute path, name, extension, size).
-- Computes project statistics (total files, total directories, extensions breakdown).
-- Graceful error handling for missing directories or permission issues.
+
+### DevPilot v0.1
+* Project Scanner: Recursively scans a directory, discovers files, computes file metadata, and summarizes extensions.
+
+### DevPilot v0.2
+* Tree-sitter Python Parser: Extracts AST metadata from Python files, including functions, classes, methods, and imports.
 
 ## Installation
 
 1. Clone or download this repository.
 2. Ensure you have Python 3.10+ installed.
-3. (Optional) Create a virtual environment and install dependencies:
+3. Create a virtual environment and install dependencies:
    ```bash
    python -m venv venv
    # Windows
@@ -26,36 +27,32 @@ DevPilot v0.1 is a lightweight Python command-line tool that recursively scans a
 
 ## Usage
 
-Run the scanner by passing a directory path to the main module:
+Run the tool by using `app.main` as a module. It supports `scan` and `parse` subcommands. If no subcommand is provided, it defaults to `scan`.
 
-```bash
-python -m app.main ./sample_project
-```
-
-You can also use the help flag to see available options:
-
+### Help
 ```bash
 python -m app.main --help
 ```
 
-### Example Output
+### Scan Directory
+```bash
+python -m app.main .
+# or
+python -m app.main scan .
 ```
-Project: sample_project
 
-Files: 15
-Directories: 6
-
-Extensions:
-.py      8
-.js      3
-.md      2
-.json    2
+### Parse Python Files
+```bash
+python -m app.main parse .
+```
+For JSON output:
+```bash
+python -m app.main parse . --json
 ```
 
 ## Running Tests
 
-Tests are written using `pytest`. To run them, ensure you are in the project root and execute:
-
+Tests are written using `pytest`.
 ```bash
-pytest tests/
+python -m pytest tests/
 ```
