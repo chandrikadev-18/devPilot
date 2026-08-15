@@ -4,7 +4,7 @@ DevPilot is an AI-powered developer assistant (currently in early stages).
 
 ## Architecture
 
-The current pipeline processes codebases deterministically through structural analysis:
+The DevPilot pipeline processes codebases deterministically and transforms syntax trees into semantic vector spaces:
 
 ```text
 Project
@@ -16,7 +16,15 @@ Tree-sitter Parser
 Code Symbols
    ↓
 CodeChunk
+   ↓
+Embedding Model (sentence-transformers)
+   ↓
+Vector Embeddings
+   ↓
+Local Development Index (data/embeddings/index.json)
 ```
+
+---
 
 ## Features
 
@@ -30,10 +38,20 @@ CodeChunk
 
 ### DevPilot v0.3 — Code Chunking & Metadata
 * **Semantic Code Chunking**: Converts AST symbols into structured `CodeChunk` objects representing complete syntactic units (functions, classes, methods).
-* **Why Semantic Units**: Unlike arbitrary fixed-size character/token chunking (which cuts across function boundaries and breaks control flow), semantic units preserve full context, signature, docstrings, decorators, and implementation logic.
-* **Deterministic Chunk IDs**: Each chunk is assigned a stable SHA-256 hash computed from its normalized file path, symbol type, parent symbol, symbol name, and line span.
+* **Deterministic Chunk IDs**: Stable SHA-256 hash computed from normalized file path, symbol type, parent symbol, symbol name, and line span.
 * **Rich Metadata**: Captures language, file extension, and file-level imports for every chunk without duplicating import chunks.
-* **Resilient Processing**: Gracefully handles parsing failures and syntax anomalies without crashing project indexing.
+
+### DevPilot v0.4 — Local Code Embeddings
+* **Semantic Code Representations**: Converts structured `CodeChunk` objects into numerical vector embeddings capturing semantic meaning and intent.
+* **Why Code Needs Embeddings**: Lexical search (grep/keyword) fails when queries use different synonyms or concepts (e.g., searching *"user verification"* won't match `authenticate_user`). Embeddings map semantically similar code concepts near each other in vector space.
+* **Vector & Embedding Dimensions**: A vector is an array of floating-point numbers where each dimension encodes latent semantic features. The default model `BAAI/bge-small-en-v1.5` outputs dense 384-dimensional vectors.
+* **Local Model Execution**: Runs 100% locally via `sentence-transformers` without requiring external APIs, credentials, or network calls during inference.
+* **Unified Model for Code & Query**: The identical embedding model is used for both code indexing (`code -> vector`) and search queries (`query -> vector`) ensuring they share the same semantic coordinate space.
+* **Vector Normalization**: Vectors are $L_2$-normalized (`normalize_embeddings=True`), allowing cosine similarity to be computed efficiently via simple dot products.
+* **Batch Processing**: Encodes chunks in configurable batches (default 32) with a single model load for optimal throughput.
+* **Local Development Index**: Serializes generated embeddings and chunk metadata to `data/embeddings/index.json` for rapid local inspection.
+
+---
 
 ## Installation
 
@@ -50,87 +68,85 @@ CodeChunk
    pip install -r requirements.txt
    ```
 
+---
+
 ## Usage
 
-Run the tool by using `app.main` as a module. It supports `scan`, `parse`, and `index` subcommands. If no subcommand is provided, it defaults to `scan`.
+Run the tool by using `app.main` as a module.
 
 ### CLI Help
 ```bash
 python -m app.main --help
 ```
 
-### 1. Scan Directory
+### 1. Scan Directory (v0.1)
 ```bash
-python -m app.main .
-# or
 python -m app.main scan .
 ```
 
-### 2. Parse Python Files
+### 2. Parse Python AST (v0.2)
 ```bash
 python -m app.main parse .
-```
-For JSON output:
-```bash
+# or for JSON:
 python -m app.main parse . --json
 ```
 
 ### 3. Index Code Chunks (v0.3)
-Scan, parse, and generate structured `CodeChunk` objects:
 ```bash
 python -m app.main index .
+# or for JSON:
+python -m app.main index . --json
 ```
 
-Example summary output:
+### 4. Generate Code Embeddings (v0.4)
+Scan, parse, chunk, and embed all code symbols in the project into local vector storage:
+```bash
+python -m app.main embed .
+```
+
+Example output:
 ```text
-DevPilot v0.3 - Code Indexer
+DevPilot v0.4 - Code Embeddings
 
 Project: .
 
 Python files analyzed: 6
+Code chunks: 18
 
-Chunks created: 18
+Embedding model:
+BAAI/bge-small-en-v1.5
 
-Functions: 10
-Classes: 3
-Methods: 5
+Embedding dimension:
+384
 
-Indexing completed successfully.
+Embeddings generated:
+18
+
+Index saved:
+data/embeddings/index.json
+
+Performance:
+  Model loading: 4.21s
+  Chunk preparation: 0.02s
+  Embedding generation: 1.87s
+  Index saving: 0.03s
+  Total: 6.13s
+
+Embedding completed successfully.
 ```
 
-#### JSON Output
-Export generated chunks and metadata as valid JSON:
+### 5. Generate Query Embedding (v0.4)
+Generate a vector representation for a natural-language search query:
 ```bash
-python -m app.main index . --json
+python -m app.main embed-query "where is user authentication handled?"
 ```
 
-Example JSON structure:
-```json
-{
-  "project": "sample_project",
-  "total_chunks": 8,
-  "chunks": [
-    {
-      "id": "e68969c89b3d9649a5b95fc6912d49d3b65f11d3a5d3a90abc64eac29e53d87f",
-      "file_path": "auth.py",
-      "language": "python",
-      "symbol_name": "AuthService",
-      "symbol_type": "class",
-      "parent_symbol": null,
-      "start_line": 4,
-      "end_line": 12,
-      "code": "class AuthService:\n    def __init__(self):\n        self.secret = os.getenv(\"SECRET_KEY\", \"default_secret\")\n\n    def hash_password(self, password):\n        return hashlib.sha256((password + self.secret).encode()).hexdigest()\n\n    def verify_password(self, password, hashed):\n        return self.hash_password(password) == hashed",
-      "metadata": {
-        "extension": ".py",
-        "imports": [
-          "import hashlib",
-          "import os"
-        ]
-      }
-    }
-  ]
-}
+Optionally view vector dimensions and preview values:
+```bash
+python -m app.main embed-query "where is user authentication handled?" --show-vector
 ```
+
+---
 
 ## Running Tests
 
@@ -139,7 +155,9 @@ Tests are written using `pytest`.
 python -m pytest tests/
 ```
 
+---
+
 ## Future Versions (Roadmap)
-* Embeddings generation & Vector Store integration (e.g. Qdrant)
-* Semantic code search and RAG retrieval
-* LLM integration and agentic workflow orchestration
+* **DevPilot v0.5**: Qdrant / Vector Database Integration
+* **DevPilot v0.6**: Semantic Search & Hybrid Retrieval
+* **DevPilot v0.7+**: LLM / RAG Integration & Agentic Workflow

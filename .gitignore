@@ -1,3 +1,4 @@
+
 .venv/
 venv/
 __pycache__/
@@ -6,3 +7,5 @@ __pycache__/
 .env
 .idea/
 .vscode/
+data/embeddings/
+data/
