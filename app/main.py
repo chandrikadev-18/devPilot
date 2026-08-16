@@ -4,6 +4,7 @@ import json
 import time
 from pathlib import Path
 from typing import List
+
 from app.scanner.scanner import ProjectScanner
 from app.parser.python_parser import PythonParser
 from app.indexer.chunker import CodeChunk, CodeChunker
@@ -12,8 +13,17 @@ from app.embeddings.embedder import (
     save_embedding_index,
     DEFAULT_EMBEDDING_MODEL,
 )
+from app.vector_store.qdrant_store import (
+    QdrantVectorStore,
+    DEFAULT_COLLECTION_NAME,
+    DEFAULT_STORAGE_PATH,
+    VectorStoreError,
+    ConfigurationMismatchError,
+    ValidationError,
+)
 
-def run_scan(directory):
+
+def run_scan(directory: str):
     scanner = ProjectScanner()
     try:
         files, stats = scanner.scan(directory)
@@ -32,7 +42,8 @@ def run_scan(directory):
         print(f"Error scanning directory: {e}", file=sys.stderr)
         sys.exit(1)
 
-def run_parse(directory, as_json=False):
+
+def run_parse(directory: str, as_json: bool = False):
     parser = PythonParser()
     try:
         results = parser.parse_directory(directory)
@@ -55,6 +66,7 @@ def run_parse(directory, as_json=False):
     except Exception as e:
         print(f"Error parsing directory: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 def run_index(directory: str, as_json: bool = False):
     scanner = ProjectScanner()
@@ -140,6 +152,7 @@ def run_index(directory: str, as_json: bool = False):
             print()
 
         print("Indexing completed successfully.")
+
 
 def run_embed(directory: str, output_path: str = "data/embeddings/index.json"):
     t_start = time.time()
@@ -259,6 +272,7 @@ def run_embed(directory: str, output_path: str = "data/embeddings/index.json"):
 
     print("Embedding completed successfully.")
 
+
 def run_embed_query(query: str, show_vector: bool = False):
     if not query or not query.strip():
         print("Error: Query cannot be empty.", file=sys.stderr)
@@ -279,16 +293,263 @@ def run_embed_query(query: str, show_vector: bool = False):
         print("\nVector:")
         print(f"[{', '.join(f'{x:.4f}' for x in vector[:8])}, ... ({len(vector)} dimensions total)]")
 
+
+def run_store(
+    directory: str,
+    storage_path: str = DEFAULT_STORAGE_PATH,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+):
+    """Executes the full v0.5 pipeline: scan -> parse -> chunk -> embed -> Qdrant store."""
+    t_start = time.time()
+
+    root_path = Path(directory).resolve()
+    if not root_path.exists():
+        print(f"Error: Directory does not exist: {root_path}", file=sys.stderr)
+        sys.exit(1)
+    if not root_path.is_dir():
+        print(f"Error: Path is not a directory: {root_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # 1. Scanner
+    t_scan_start = time.time()
+    scanner = ProjectScanner()
+    try:
+        files, stats = scanner.scan(directory)
+    except Exception as e:
+        print(f"Error scanning directory: {e}", file=sys.stderr)
+        sys.exit(1)
+    t_scan_end = time.time()
+    scan_time = t_scan_end - t_scan_start
+
+    # 2. Parser
+    t_parse_start = time.time()
+    parser = PythonParser()
+    python_files = [f for f in files if f.extension == ".py"]
+    parsed_results = []
+    file_errors = []
+    analyzed_files_count = 0
+
+    for file_info in python_files:
+        try:
+            parsed_res = parser.parse_file(file_info.absolute_path)
+            if "error" in parsed_res:
+                file_errors.append({
+                    "file": file_info.relative_path,
+                    "error": parsed_res["error"]
+                })
+                continue
+            parsed_results.append((file_info.relative_path, parsed_res))
+            analyzed_files_count += 1
+        except Exception as e:
+            file_errors.append({
+                "file": file_info.relative_path,
+                "error": str(e)
+            })
+    t_parse_end = time.time()
+    parse_time = t_parse_end - t_parse_start
+
+    # 3. Chunking
+    t_chunk_start = time.time()
+    chunker = CodeChunker()
+    all_chunks: List[CodeChunk] = []
+    for rel_path, parsed_res in parsed_results:
+        chunks = chunker.chunk_parsed_file(parsed_res, file_path_override=rel_path)
+        all_chunks.extend(chunks)
+    t_chunk_end = time.time()
+    chunk_time = t_chunk_end - t_chunk_start
+
+    if not all_chunks:
+        print("DevPilot v0.5 - Vector Store\n")
+        print(f"Project: {directory}\n")
+        print("No code chunks found.\nNothing to store.")
+        return
+
+    # 4. Embeddings
+    t_embed_start = time.time()
+    try:
+        embedder = CodeEmbedder()
+        _ = embedder.dimension  # ensure model is ready
+        embeddings = embedder.embed_chunks(all_chunks)
+    except Exception as e:
+        print(f"Error generating embeddings: {e}", file=sys.stderr)
+        sys.exit(1)
+    t_embed_end = time.time()
+    embed_time = t_embed_end - t_embed_start
+
+    # 5. Qdrant Store
+    t_qdrant_start = time.time()
+    try:
+        store = QdrantVectorStore(storage_path=storage_path)
+        store.create_collection(
+            collection_name=collection_name,
+            vector_size=embedder.dimension,
+        )
+    except ConfigurationMismatchError as e:
+        print(f"Configuration Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error initializing Qdrant store: {e}", file=sys.stderr)
+        sys.exit(1)
+    t_qdrant_end = time.time()
+    qdrant_init_time = t_qdrant_end - t_qdrant_start
+
+    # 6. Upsert vectors
+    t_upsert_start = time.time()
+    try:
+        points_stored = store.upsert_chunks(
+            chunks=all_chunks,
+            vectors=embeddings,
+            collection_name=collection_name,
+        )
+    except Exception as e:
+        print(f"Error storing vectors in Qdrant: {e}", file=sys.stderr)
+        sys.exit(1)
+    t_upsert_end = time.time()
+    upsert_time = t_upsert_end - t_upsert_start
+
+    total_time = time.time() - t_start
+
+    # Output matching specification
+    print("DevPilot v0.5 - Vector Store\n")
+    print(f"Project: {directory}\n")
+    print(f"Python files analyzed: {analyzed_files_count}")
+    print(f"Code chunks: {len(all_chunks)}\n")
+    print(f"Embedding model:\n{embedder.model_name}\n")
+    print(f"Embedding dimension:\n{embedder.dimension}\n")
+    print(f"Qdrant collection:\n{collection_name}\n")
+    print(f"Vectors stored:\n{points_stored}\n")
+    print(f"Storage:\n{Path(storage_path).as_posix()}/\n")
+    print("Performance:")
+    print(f"  Scanner: {scan_time:.2f}s")
+    print(f"  Parser: {parse_time:.2f}s")
+    print(f"  Chunking: {chunk_time:.2f}s")
+    print(f"  Embedding: {embed_time:.2f}s")
+    print(f"  Qdrant: {qdrant_init_time:.2f}s")
+    print(f"  Upsert: {upsert_time:.2f}s")
+    print(f"  Total: {total_time:.2f}s\n")
+
+    if file_errors:
+        print("Files with errors:")
+        for err in file_errors:
+            print(f"  {err['file']} → parsing failed: {err['error']}")
+        print()
+
+    print("Vector storage completed successfully.")
+
+
+def run_store_info(
+    storage_path: str = DEFAULT_STORAGE_PATH,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+):
+    """Displays information about the Qdrant vector collection."""
+    try:
+        store = QdrantVectorStore(storage_path=storage_path)
+        if not store.collection_exists(collection_name):
+            print("DevPilot v0.5 - Vector Store Information\n")
+            print(f"Collection:\n{collection_name}\n")
+            print("Status:\nCollection does not exist.")
+            return
+
+        info = store.get_collection_info(collection_name)
+        print("DevPilot v0.5 - Vector Store Information\n")
+        print(f"Collection:\n{info['collection_name']}\n")
+        print(f"Vector dimension:\n{info['vector_size']}\n")
+        print(f"Distance:\n{info['distance']}\n")
+        print(f"Points:\n{info['points']}\n")
+        print(f"Status:\n{info['status']}")
+    except Exception as e:
+        print(f"Error retrieving collection info: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_store_get(
+    chunk_id: str,
+    storage_path: str = DEFAULT_STORAGE_PATH,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+):
+    """Retrieves and displays a stored CodeChunk by its ID."""
+    if not chunk_id or not chunk_id.strip():
+        print("Error: chunk_id cannot be empty.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        store = QdrantVectorStore(storage_path=storage_path)
+        payload = store.get_by_id(chunk_id.strip(), collection_name=collection_name)
+    except Exception as e:
+        print(f"Error querying vector store: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not payload:
+        print(f"Chunk ID '{chunk_id}' not found in vector store.")
+        return
+
+    print("Chunk ID:")
+    print(f"{payload.get('chunk_id', chunk_id)}\n")
+    print("File:")
+    print(f"{payload.get('file_path', '')}\n")
+    print("Symbol:")
+    print(f"{payload.get('symbol_name', '')}\n")
+    print("Type:")
+    print(f"{payload.get('symbol_type', '')}\n")
+    if payload.get("parent_symbol"):
+        print("Parent:")
+        print(f"{payload.get('parent_symbol')}\n")
+    print("Lines:")
+    print(f"{payload.get('start_line', 0)}-{payload.get('end_line', 0)}")
+
+
+def run_store_reset(
+    storage_path: str = DEFAULT_STORAGE_PATH,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+    auto_confirm: bool = False,
+):
+    """Deletes the Qdrant vector collection upon explicit confirmation."""
+    if not auto_confirm:
+        print("Are you sure you want to delete the DevPilot vector collection?")
+        try:
+            user_input = input("Type 'yes' to continue: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\nReset cancelled.")
+            return
+
+        if user_input != "yes":
+            print("Reset cancelled.")
+            return
+
+    try:
+        store = QdrantVectorStore(storage_path=storage_path)
+        deleted = store.delete_collection(collection_name=collection_name)
+        if deleted:
+            print(f"Collection '{collection_name}' deleted successfully.")
+        else:
+            print(f"Collection '{collection_name}' does not exist.")
+    except Exception as e:
+        print(f"Error resetting collection: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     
     # Intercept arguments for backward compatibility
     # If the first argument is not a known subcommand and doesn't start with '-', treat it as 'scan'
-    known_commands = ["scan", "parse", "index", "embed", "embed-query", "-h", "--help"]
+    known_commands = [
+        "scan",
+        "parse",
+        "index",
+        "embed",
+        "embed-query",
+        "store",
+        "store-info",
+        "store-get",
+        "store-reset",
+        "-h",
+        "--help",
+    ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v0.4 - Code Intelligence and Embeddings")
+    parser = argparse.ArgumentParser(description="DevPilot v0.5 - Code Intelligence and Vector Store")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -315,6 +576,29 @@ def main():
     query_parser.add_argument("query", type=str, help="Text query to embed")
     query_parser.add_argument("--show-vector", action="store_true", help="Display snippet of the generated vector")
 
+    # Store subcommand (v0.5)
+    store_parser = subparsers.add_parser("store", help="Index, embed, and store code chunks into Qdrant vector database")
+    store_parser.add_argument("directory", type=str, help="Path to the project directory to store")
+    store_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
+    store_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
+
+    # Store-info subcommand (v0.5)
+    info_parser = subparsers.add_parser("store-info", help="Display information about the current Qdrant collection")
+    info_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
+    info_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
+
+    # Store-get subcommand (v0.5)
+    get_parser = subparsers.add_parser("store-get", help="Retrieve a stored vector and payload by chunk ID")
+    get_parser.add_argument("chunk_id", type=str, help="CodeChunk ID or point UUID to retrieve")
+    get_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
+    get_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
+
+    # Store-reset subcommand (v0.5)
+    reset_parser = subparsers.add_parser("store-reset", help="Reset/delete the Qdrant vector collection")
+    reset_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
+    reset_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
+    reset_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -327,6 +611,15 @@ def main():
         run_embed(args.directory, output_path=args.output)
     elif args.command == "embed-query":
         run_embed_query(args.query, show_vector=args.show_vector)
+    elif args.command == "store":
+        run_store(args.directory, storage_path=args.storage, collection_name=args.collection)
+    elif args.command == "store-info":
+        run_store_info(storage_path=args.storage, collection_name=args.collection)
+    elif args.command == "store-get":
+        run_store_get(args.chunk_id, storage_path=args.storage, collection_name=args.collection)
+    elif args.command == "store-reset":
+        run_store_reset(storage_path=args.storage, collection_name=args.collection, auto_confirm=args.yes)
+
 
 if __name__ == "__main__":
     main()
