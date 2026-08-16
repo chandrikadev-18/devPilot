@@ -413,6 +413,47 @@ class QdrantVectorStore:
 
         return None
 
+    def search(
+        self,
+        query_vector: List[float],
+        collection_name: str = DEFAULT_COLLECTION_NAME,
+        limit: int = 5,
+        score_threshold: Optional[float] = None,
+        query_filter: Optional[Filter] = None,
+    ) -> List[Any]:
+        """
+        Searches collection for points closest/most similar to the query vector.
+
+        Args:
+            query_vector: Query embedding vector.
+            collection_name: Name of the collection to search.
+            limit: Maximum number of points to retrieve.
+            score_threshold: Minimum similarity score cutoff.
+            query_filter: Optional Qdrant filter condition.
+
+        Returns:
+            List of ScoredPoint objects from Qdrant.
+        """
+        if not self.collection_exists(collection_name):
+            raise VectorStoreError(f"Collection '{collection_name}' does not exist.")
+
+        if not query_vector or len(query_vector) == 0:
+            raise ValidationError("Query vector cannot be empty.")
+
+        try:
+            res = self.client.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                limit=limit,
+                score_threshold=score_threshold,
+                query_filter=query_filter,
+                with_payload=True,
+                with_vectors=False,
+            )
+            return res.points
+        except Exception as e:
+            raise VectorStoreError(f"Failed to execute vector search on '{collection_name}': {e}") from e
+
     def delete_collection(self, collection_name: str = DEFAULT_COLLECTION_NAME) -> bool:
         """
         Deletes a collection from the vector database.

@@ -3,7 +3,7 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from app.scanner.scanner import ProjectScanner
 from app.parser.python_parser import PythonParser
@@ -20,6 +20,10 @@ from app.vector_store.qdrant_store import (
     VectorStoreError,
     ConfigurationMismatchError,
     ValidationError,
+)
+from app.search.semantic_search import (
+    SearchResult,
+    SemanticSearcher,
 )
 
 
@@ -528,11 +532,108 @@ def run_store_reset(
         sys.exit(1)
 
 
+def run_search(
+    query: str,
+    top_k: int = 5,
+    min_score: Optional[float] = None,
+    extension: Optional[str] = None,
+    path_prefix: Optional[str] = None,
+    symbol_type: Optional[str] = None,
+    as_json: bool = False,
+    storage_path: str = DEFAULT_STORAGE_PATH,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+):
+    """Executes semantic code search across indexed code vectors."""
+    if not query or not query.strip():
+        print("Search query cannot be empty.", file=sys.stderr)
+        sys.exit(1)
+
+    t_start = time.time()
+    try:
+        t_model_start = time.time()
+        embedder = CodeEmbedder()
+        _ = embedder.dimension  # ensure model is loaded
+        t_model_end = time.time()
+        model_load_time = t_model_end - t_model_start
+
+        store = QdrantVectorStore(storage_path=storage_path)
+        searcher = SemanticSearcher(
+            embedder=embedder,
+            vector_store=store,
+            collection_name=collection_name,
+        )
+
+        # 1. Verify compatibility
+        searcher.verify_collection_compatibility()
+
+        # 2. Embedding query
+        t_embed_start = time.time()
+        _ = embedder.embed_text(query)
+        t_embed_end = time.time()
+        embed_time = t_embed_end - t_embed_start
+
+        # 3. Vector Search & Processing
+        t_search_start = time.time()
+        results = searcher.search(
+            query=query,
+            top_k=top_k,
+            min_score=min_score,
+            extension=extension,
+            path_prefix=path_prefix,
+            symbol_type=symbol_type,
+        )
+        t_search_end = time.time()
+        search_time = t_search_end - t_search_start
+
+        total_time = time.time() - t_start
+        proc_time = max(0.0, total_time - model_load_time - embed_time - search_time)
+
+    except (VectorStoreError, ConfigurationMismatchError, ValidationError) as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Search error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if as_json:
+        output = {
+            "query": query,
+            "top_k": top_k,
+            "results": [r.to_dict() for r in results],
+        }
+        print(json.dumps(output, indent=2))
+        return
+
+    print("DevPilot v0.6 - Semantic Code Search\n")
+    print(f"Query:\n{query}\n")
+
+    if not results:
+        print("No sufficiently relevant code found.")
+        return
+
+    print("Results:\n")
+    for idx, r in enumerate(results, start=1):
+        print(f"[{idx}] Score: {r.score:.4f}")
+        print(f"File: {r.file_path}")
+        print(f"Symbol: {r.symbol_name}")
+        print(f"Type: {r.symbol_type}")
+        if r.parent_symbol:
+            print(f"Class: {r.parent_symbol}")
+        print(f"Lines: {r.start_line}-{r.end_line}\n")
+        print(f"{r.code.strip()}\n")
+
+    print(f"Found {len(results)} relevant result{'s' if len(results) != 1 else ''}.\n")
+    print("Performance:")
+    print(f"  Query embedding: {embed_time:.2f}s")
+    print(f"  Qdrant search: {search_time:.2f}s")
+    print(f"  Result processing: {proc_time:.2f}s")
+    print(f"  Total: {total_time:.2f}s")
+
+
 def main():
     """Main CLI entry point."""
     
     # Intercept arguments for backward compatibility
-    # If the first argument is not a known subcommand and doesn't start with '-', treat it as 'scan'
     known_commands = [
         "scan",
         "parse",
@@ -543,13 +644,14 @@ def main():
         "store-info",
         "store-get",
         "store-reset",
+        "search",
         "-h",
         "--help",
     ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v0.5 - Code Intelligence and Vector Store")
+    parser = argparse.ArgumentParser(description="DevPilot v0.6 - Code Intelligence and Semantic Search")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -599,6 +701,18 @@ def main():
     reset_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
     reset_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
 
+    # Search subcommand (v0.6)
+    search_parser = subparsers.add_parser("search", help="Execute semantic search over indexed code vectors")
+    search_parser.add_argument("query", type=str, help="Natural language search query")
+    search_parser.add_argument("--top-k", type=int, default=5, help="Maximum number of search results to return (default: 5)")
+    search_parser.add_argument("--min-score", type=float, default=None, help="Minimum similarity score threshold (e.g. 0.70)")
+    search_parser.add_argument("--extension", type=str, default=None, help="Filter by file extension (e.g. .py)")
+    search_parser.add_argument("--path", type=str, default=None, help="Filter by file path prefix (e.g. backend/)")
+    search_parser.add_argument("--type", type=str, default=None, help="Filter by symbol type (function, class, method)")
+    search_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+    search_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
+    search_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -619,6 +733,18 @@ def main():
         run_store_get(args.chunk_id, storage_path=args.storage, collection_name=args.collection)
     elif args.command == "store-reset":
         run_store_reset(storage_path=args.storage, collection_name=args.collection, auto_confirm=args.yes)
+    elif args.command == "search":
+        run_search(
+            query=args.query,
+            top_k=args.top_k,
+            min_score=args.min_score,
+            extension=args.extension,
+            path_prefix=args.path,
+            symbol_type=args.type,
+            as_json=args.json,
+            storage_path=args.storage,
+            collection_name=args.collection,
+        )
 
 
 if __name__ == "__main__":
