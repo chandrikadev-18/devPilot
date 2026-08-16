@@ -4,26 +4,24 @@ DevPilot is an AI-powered developer assistant (currently in early stages).
 
 ## Architecture
 
-The DevPilot pipeline processes codebases deterministically and transforms syntax trees into persistent semantic vector spaces:
+The DevPilot pipeline processes codebases deterministically and transforms syntax trees into persistent semantic vector spaces for natural-language code search:
 
 ```text
-Project
-   ↓
-Scanner
-   ↓
-Tree-sitter Parser
-   ↓
-Code Symbols
-   ↓
-CodeChunk
+Indexing Pipeline:
+Project -> Scanner -> Tree-sitter Parser -> CodeChunk -> Embedding Model -> Qdrant Collection (data/qdrant/)
+
+Search Pipeline:
+User Query
    ↓
 Embedding Model (BAAI/bge-small-en-v1.5)
    ↓
-Embedding Vector (384-d)
+Query Vector (384-d)
    ↓
-Qdrant Collection (devpilot_code)
+Qdrant Vector Search (Cosine Similarity)
    ↓
-Vector + Payload Metadata (data/qdrant/)
+Top-K Scored Points + Payload
+   ↓
+Ranked SearchResult Objects
 ```
 
 ---
@@ -60,17 +58,28 @@ Vector + Payload Metadata (data/qdrant/)
   - Native payload filtering and metadata indexing.
   - Standardized distance metrics including Cosine, Euclidean, and Dot product.
 * **Key Vector Database Concepts**:
-  - **Collection**: A named, isolated set of points that share the same vector dimension and distance metric (e.g. `devpilot_code` with dimension 384 and Cosine distance).
-  - **Point**: The core entity stored in Qdrant, consisting of a unique ID, a dense vector, and optional JSON payload metadata.
-  - **Vector**: A dense array of 384 floating-point numbers encoding the semantic meaning of the code snippet.
-  - **Payload Metadata**: JSON payload attached to each point containing `chunk_id`, `file_path`, `language`, `symbol_name`, `symbol_type`, `parent_symbol`, `start_line`, `end_line`, `code`, and import metadata.
-  - **Deterministic IDs**: Chunk IDs are mapped to reproducible UUIDv5 identifiers. Re-indexing identical code produces the exact same point ID.
-  - **Upsert**: Insert or update operation. If a point with the same ID already exists, its vector and payload are updated in place, preventing duplicate points during re-indexing.
-  - **Local Persistent Storage**: Vectors and payloads are stored on disk in `data/qdrant/` for development without cloud lock-in or network dependencies.
-* **Scope Notice**:
-  - **Semantic Search**: *Coming in v0.6*
+  - **Collection**: A named, isolated set of points that share the same vector dimension and distance metric (`devpilot_code`).
+  - **Point**: The core entity stored in Qdrant, consisting of a deterministic UUIDv5 ID, a dense vector, and payload metadata.
+  - **Payload Metadata**: JSON payload attached to each point containing `chunk_id`, `file_path`, `language`, `symbol_name`, `symbol_type`, `parent_symbol`, `start_line`, `end_line`, `code`, and imports.
+  - **Upsert**: Updates existing points in-place without duplicating records.
+  - **Local Persistent Storage**: Stored on disk in `data/qdrant/`.
+
+### DevPilot v0.6 — Semantic Code Search
+* **What Semantic Search Means**: Finding code based on conceptual intent and meaning rather than exact string matching.
+* **Why Keyword Search is Insufficient**: Keyword queries like *"how do we hash passwords?"* or *"verify login credentials"* fail with grep when the actual function is named `authenticate_user` or `hash_password`. Semantic search bridges the vocabulary gap.
+* **Query Embedding**: The exact same `BAAI/bge-small-en-v1.5` model converts the query into a 384-dimensional vector in the same coordinate space as the indexed code.
+* **Cosine Similarity**: Qdrant computes the cosine similarity between the query vector and stored vectors, returning scores between -1.0 and 1.0 (with higher scores indicating greater semantic similarity).
+* **Configurable Top-K**: Controls the maximum number of ranked results returned (default: 5).
+* **Minimum Score Cutoff (`--min-score`)**: Eliminates irrelevant results that fall below a specified similarity threshold.
+* **Payload Filtering**:
+  - `--extension`: Restrict search by file extension (e.g. `.py`).
+  - `--path`: Restrict search to specific directories (e.g. `backend/`).
+  - `--type`: Restrict search by symbol type (`function`, `class`, `method`).
+* **Output Modes**: Formatted terminal output with exact line ranges and source snippets, or machine-readable JSON via `--json`.
+* **Scope Boundaries**:
   - **RAG (Retrieval-Augmented Generation)**: *Future version*
-  - **AI Agent & LLMs**: *Future version*
+  - **LLM Synthesis**: *Future version*
+  - **AI Agent Execution**: *Future version*
 
 ---
 
@@ -130,101 +139,102 @@ python -m app.main embed-query "where is user authentication handled?"
 ```
 
 ### 6. Store Vectors in Qdrant (v0.5)
-Scan, parse, chunk, embed, and store all code chunks in local Qdrant vector database:
 ```bash
 python -m app.main store .
 ```
 
-Example output:
-```text
-DevPilot v0.5 - Vector Store
-
-Project: .
-
-Python files analyzed: 20
-Code chunks: 111
-
-Embedding model:
-BAAI/bge-small-en-v1.5
-
-Embedding dimension:
-384
-
-Qdrant collection:
-devpilot_code
-
-Vectors stored:
-111
-
-Storage:
-data/qdrant/
-
-Performance:
-  Scanner: 0.00s
-  Parser: 0.02s
-  Chunking: 0.00s
-  Embedding: 40.57s
-  Qdrant: 0.24s
-  Upsert: 0.83s
-  Total: 41.67s
-
-Vector storage completed successfully.
-```
-
 ### 7. Collection Information (v0.5)
-Display current collection status, point count, and dimension:
 ```bash
 python -m app.main store-info
 ```
 
-Example output:
-```text
-DevPilot v0.5 - Vector Store Information
-
-Collection:
-devpilot_code
-
-Vector dimension:
-384
-
-Distance:
-Cosine
-
-Points:
-111
-
-Status:
-Ready
-```
-
 ### 8. Retrieve Point by Chunk ID (v0.5)
-Inspect stored payload and source line spans for a specific chunk ID:
 ```bash
 python -m app.main store-get <chunk_id>
 ```
 
-Example output:
-```text
-Chunk ID:
-a91d0135e2e0cfeda8dcc3abe1a258a216da8e0333f7dc441f0da895f7f8aea9
-
-File:
-app\embeddings\embedder.py
-
-Symbol:
-build_embedding_text
-
-Type:
-function
-
-Lines:
-11-38
-```
-
 ### 9. Reset Collection (v0.5)
-Safely delete the vector collection with interactive confirmation:
 ```bash
 python -m app.main store-reset
+```
+
+### 10. Semantic Code Search (v0.6)
+Search the indexed codebase using natural-language queries:
+
+```bash
+python -m app.main search "where is user authentication handled?"
+```
+
+Example output:
+```text
+DevPilot v0.6 - Semantic Code Search
+
+Query:
+where is user authentication handled?
+
+Results:
+
+[1] Score: 0.6618
+File: sample_project\auth.py
+Symbol: login_user
+Type: function
+Lines: 14-15
+
+def login_user(username, password):
+    pass
+
+[2] Score: 0.6611
+File: sample_project\auth.py
+Symbol: __init__
+Type: method
+Class: AuthService
+Lines: 5-6
+
+def __init__(self):
+        self.secret = os.getenv("SECRET_KEY", "default_secret")
+
+[3] Score: 0.6603
+File: sample_project\auth.py
+Symbol: AuthService
+Type: class
+Lines: 4-12
+
+class AuthService:
+    def __init__(self):
+        self.secret = os.getenv("SECRET_KEY", "default_secret")
+
+    def hash_password(self, password):
+        return hashlib.sha256((password + self.secret).encode()).hexdigest()
+
+    def verify_password(self, password, hashed):
+        return self.hash_password(password) == hashed
+
+Found 3 relevant results.
+```
+
+#### Limit Results with Top-K:
+```bash
+python -m app.main search "password verification" --top-k 3
+```
+
+#### Filter by Symbol Type:
+```bash
+python -m app.main search "authentication" --type function
+```
+
+#### Filter by Directory Path or Extension:
+```bash
+python -m app.main search "authentication" --path sample_project/ --extension .py
+```
+
+#### Filter by Minimum Similarity Score:
+```bash
+python -m app.main search "authentication" --min-score 0.65
+```
+
+#### JSON Output:
+```bash
+python -m app.main search "where is user authentication handled?" --json
 ```
 
 ---
@@ -239,5 +249,4 @@ python -m pytest tests/
 ---
 
 ## Future Versions (Roadmap)
-* **DevPilot v0.6**: Semantic Search & Similarity Retrieval
 * **DevPilot v0.7+**: LLM / RAG Integration & Agentic Workflow
