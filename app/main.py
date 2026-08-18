@@ -25,6 +25,17 @@ from app.search.semantic_search import (
     SearchResult,
     SemanticSearcher,
 )
+from app.llm import (
+    LLMAuthenticationError,
+    LLMError,
+    LLMProvider,
+    create_llm_provider,
+)
+from app.rag import (
+    ContextBuilder,
+    QAResult,
+    RAGPipeline,
+)
 
 
 def run_scan(directory: str):
@@ -630,6 +641,94 @@ def run_search(
     print(f"  Total: {total_time:.2f}s")
 
 
+def run_ask(
+    question: str,
+    top_k: int = 5,
+    min_score: Optional[float] = None,
+    extension: Optional[str] = None,
+    path_prefix: Optional[str] = None,
+    symbol_type: Optional[str] = None,
+    as_json: bool = False,
+    storage_path: str = DEFAULT_STORAGE_PATH,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+    provider_name: Optional[str] = None,
+    model_name: Optional[str] = None,
+):
+    """Executes RAG Codebase Question Answering."""
+    try:
+        embedder = CodeEmbedder()
+        store = QdrantVectorStore(storage_path=storage_path)
+        searcher = SemanticSearcher(
+            embedder=embedder,
+            vector_store=store,
+            collection_name=collection_name,
+        )
+
+        llm = create_llm_provider(
+            provider_name=provider_name,
+            model=model_name,
+        )
+
+        pipeline = RAGPipeline(
+            searcher=searcher,
+            llm=llm,
+        )
+
+        result = pipeline.ask(
+            question=question,
+            top_k=top_k,
+            min_score=min_score,
+            extension=extension,
+            path_prefix=path_prefix,
+            symbol_type=symbol_type,
+        )
+
+    except LLMAuthenticationError as e:
+        print(f"LLM API key is not configured.\nPlease configure the required environment variable.", file=sys.stderr)
+        sys.exit(1)
+    except (VectorStoreError, ConfigurationMismatchError, ValidationError) as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+    except LLMError as e:
+        print(f"LLM Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps(result.to_dict(), indent=2))
+        return
+
+    print("DevPilot v0.7 - Codebase Q&A\n")
+    print(f"Question:\n{result.question}\n")
+    print(f"Answer:\n\n{result.answer}\n")
+
+    if result.sources:
+        print("Sources:\n")
+        for idx, src in enumerate(result.sources, start=1):
+            print(f"{idx}. {src.get('file_path')}")
+            sym = src.get('symbol_name')
+            if sym:
+                parent = src.get('parent_symbol')
+                if parent:
+                    print(f"   {parent}.{sym}()")
+                else:
+                    print(f"   {sym}()")
+            print(f"   Lines: {src.get('start_line')}-{src.get('end_line')}")
+            if "score" in src:
+                print(f"   Score: {src.get('score'):.4f}")
+            print()
+
+    search_time = result.timings.get("search", 0.0)
+    llm_time = result.timings.get("llm", 0.0)
+    total_time = result.timings.get("total", 0.0)
+
+    print(f"Search time: {search_time:.2f}s")
+    print(f"LLM time: {llm_time:.2f}s")
+    print(f"Total time: {total_time:.2f}s")
+
+
 def main():
     """Main CLI entry point."""
     
@@ -645,13 +744,14 @@ def main():
         "store-get",
         "store-reset",
         "search",
+        "ask",
         "-h",
         "--help",
     ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v0.6 - Code Intelligence and Semantic Search")
+    parser = argparse.ArgumentParser(description="DevPilot v0.7 - Code Intelligence and Codebase Q&A")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -713,6 +813,20 @@ def main():
     search_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
     search_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
 
+    # Ask subcommand (v0.7)
+    ask_parser = subparsers.add_parser("ask", help="Ask questions about the indexed codebase using RAG")
+    ask_parser.add_argument("question", type=str, help="Natural language question about the codebase")
+    ask_parser.add_argument("--top-k", type=int, default=5, help="Maximum number of code chunks to retrieve (default: 5)")
+    ask_parser.add_argument("--min-score", type=float, default=None, help="Minimum similarity score threshold (e.g. 0.70)")
+    ask_parser.add_argument("--extension", type=str, default=None, help="Filter by file extension (e.g. .py)")
+    ask_parser.add_argument("--path", type=str, default=None, help="Filter by file path prefix (e.g. backend/)")
+    ask_parser.add_argument("--type", type=str, default=None, help="Filter by symbol type (function, class, method)")
+    ask_parser.add_argument("--provider", type=str, default=None, help="LLM provider name (e.g. groq)")
+    ask_parser.add_argument("--model", type=str, default=None, help="LLM model name (e.g. llama-3.3-70b-versatile)")
+    ask_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+    ask_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
+    ask_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -744,6 +858,20 @@ def main():
             as_json=args.json,
             storage_path=args.storage,
             collection_name=args.collection,
+        )
+    elif args.command == "ask":
+        run_ask(
+            question=args.question,
+            top_k=args.top_k,
+            min_score=args.min_score,
+            extension=args.extension,
+            path_prefix=args.path,
+            symbol_type=args.type,
+            as_json=args.json,
+            storage_path=args.storage,
+            collection_name=args.collection,
+            provider_name=args.provider,
+            model_name=args.model,
         )
 
 

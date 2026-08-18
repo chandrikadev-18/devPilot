@@ -3,3 +3,4 @@ tree-sitter==0.26.0
 tree-sitter-python==0.25.0
 sentence-transformers
 qdrant-client
+groq

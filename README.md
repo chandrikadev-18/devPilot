@@ -1,27 +1,31 @@
 # DevPilot
 
-DevPilot is an AI-powered developer assistant (currently in early stages).
+DevPilot is an AI-powered developer assistant for intelligent codebase exploration and question answering.
 
 ## Architecture
 
-The DevPilot pipeline processes codebases deterministically and transforms syntax trees into persistent semantic vector spaces for natural-language code search:
+The DevPilot pipeline processes codebases deterministically and combines dense vector search with retrieval-augmented generation (RAG):
 
 ```text
-Indexing Pipeline:
+Indexing Pipeline (v0.1 - v0.5):
 Project -> Scanner -> Tree-sitter Parser -> CodeChunk -> Embedding Model -> Qdrant Collection (data/qdrant/)
 
-Search Pipeline:
-User Query
-   ↓
-Embedding Model (BAAI/bge-small-en-v1.5)
-   ↓
-Query Vector (384-d)
-   ↓
-Qdrant Vector Search (Cosine Similarity)
-   ↓
-Top-K Scored Points + Payload
-   ↓
-Ranked SearchResult Objects
+RAG Codebase Q&A Pipeline (v0.6 - v0.7):
+User Question
+      ↓
+Query Embedding (BAAI/bge-small-en-v1.5)
+      ↓
+Semantic Search (Qdrant Cosine Similarity)
+      ↓
+Top-K Relevant CodeChunks
+      ↓
+Context Builder (Chunk & Character Limits, Source Metadata)
+      ↓
+LLM Prompt (System Guardrails + Grounded Context)
+      ↓
+LLM Provider (Groq / Configurable Abstraction)
+      ↓
+Grounded Answer + Separate Source Citations
 ```
 
 ---
@@ -44,46 +48,34 @@ Ranked SearchResult Objects
 ### DevPilot v0.4 — Local Code Embeddings
 * **Semantic Code Representations**: Converts structured `CodeChunk` objects into numerical vector embeddings capturing semantic meaning and intent.
 * **Why Code Needs Embeddings**: Lexical search (grep/keyword) fails when queries use different synonyms or concepts (e.g., searching *"user verification"* won't match `authenticate_user`). Embeddings map semantically similar code concepts near each other in vector space.
-* **Vector & Embedding Dimensions**: A vector is an array of floating-point numbers where each dimension encodes latent semantic features. The default model `BAAI/bge-small-en-v1.5` outputs dense 384-dimensional vectors.
-* **Local Model Execution**: Runs 100% locally via `sentence-transformers` without requiring external APIs, credentials, or network calls during inference.
-* **Vector Normalization & Distance Metric**: Vectors are $L_2$-normalized (`normalize_embeddings=True`), allowing cosine distance/similarity to compare vector directions accurately invariant to text length.
-* **Local Development Index**: Serializes generated embeddings and chunk metadata to `data/embeddings/index.json`.
+* **Dense 384-dimensional Vectors**: Uses `BAAI/bge-small-en-v1.5` running locally via `sentence-transformers` without external API dependencies during inference.
+* **Vector Normalization & Distance Metric**: Embeddings are $L_2$-normalized (`normalize_embeddings=True`) for cosine similarity.
 
 ### DevPilot v0.5 — Qdrant Vector Database Integration
-* **What is a Vector Database?**: A specialized database engineered to store, index, and query high-dimensional vector embeddings alongside rich structured payload metadata.
-* **Why DevPilot Needs a Vector Database**: Flat files (such as JSON) require loading all vectors into memory and performing linear $O(N)$ scans. A vector database provides scalable, persistent, and indexed storage with fast lookups.
-* **Why Qdrant is Used**:
-  - High performance written in Rust with official Python client (`qdrant-client`).
-  - Supports embedded local persistent disk mode without requiring an external server or Docker container.
-  - Native payload filtering and metadata indexing.
-  - Standardized distance metrics including Cosine, Euclidean, and Dot product.
-* **Key Vector Database Concepts**:
-  - **Collection**: A named, isolated set of points that share the same vector dimension and distance metric (`devpilot_code`).
-  - **Point**: The core entity stored in Qdrant, consisting of a deterministic UUIDv5 ID, a dense vector, and payload metadata.
-  - **Payload Metadata**: JSON payload attached to each point containing `chunk_id`, `file_path`, `language`, `symbol_name`, `symbol_type`, `parent_symbol`, `start_line`, `end_line`, `code`, and imports.
-  - **Upsert**: Updates existing points in-place without duplicating records.
-  - **Local Persistent Storage**: Stored on disk in `data/qdrant/`.
+* **Embedded Vector Database**: High-performance persistent storage on disk (`data/qdrant/`) via `qdrant-client`.
+* **Payload Metadata**: Each stored point retains full code chunk metadata (`chunk_id`, `file_path`, `symbol_name`, `symbol_type`, `parent_symbol`, `start_line`, `end_line`, `code`).
+* **Upsert Support**: Re-indexing updates existing points in place without duplicate records.
 
 ### DevPilot v0.6 — Semantic Code Search
-* **What Semantic Search Means**: Finding code based on conceptual intent and meaning rather than exact string matching.
-* **Why Keyword Search is Insufficient**: Keyword queries like *"how do we hash passwords?"* or *"verify login credentials"* fail with grep when the actual function is named `authenticate_user` or `hash_password`. Semantic search bridges the vocabulary gap.
-* **Query Embedding**: The exact same `BAAI/bge-small-en-v1.5` model converts the query into a 384-dimensional vector in the same coordinate space as the indexed code.
-* **Cosine Similarity**: Qdrant computes the cosine similarity between the query vector and stored vectors, returning scores between -1.0 and 1.0 (with higher scores indicating greater semantic similarity).
-* **Configurable Top-K**: Controls the maximum number of ranked results returned (default: 5).
-* **Minimum Score Cutoff (`--min-score`)**: Eliminates irrelevant results that fall below a specified similarity threshold.
-* **Payload Filtering**:
-  - `--extension`: Restrict search by file extension (e.g. `.py`).
-  - `--path`: Restrict search to specific directories (e.g. `backend/`).
-  - `--type`: Restrict search by symbol type (`function`, `class`, `method`).
-* **Output Modes**: Formatted terminal output with exact line ranges and source snippets, or machine-readable JSON via `--json`.
-* **Scope Boundaries**:
-  - **RAG (Retrieval-Augmented Generation)**: *Future version*
-  - **LLM Synthesis**: *Future version*
-  - **AI Agent Execution**: *Future version*
+* **Intent-Based Search**: Natural language queries matched via cosine similarity in Qdrant.
+* **Top-K & Score Filtering**: Configurable result limit (`--top-k`) and relevance threshold (`--min-score`).
+* **Payload Filters**: Filter by extension (`--extension`), directory path (`--path`), or symbol type (`--type`).
+
+### DevPilot v0.7 — RAG + LLM Codebase Question Answering
+* **What is RAG?**: Retrieval-Augmented Generation (Retrieval $\rightarrow$ Augmented Context $\rightarrow$ Generation). Instead of asking an LLM to guess repository implementation details from general training memory, RAG first retrieves the exact code snippets from the indexed codebase, injects them into the prompt as factual context, and instructs the LLM to generate an answer grounded strictly in that code.
+* **Why Retrieval is Needed Before Generation**:
+  - LLMs have no prior knowledge of private or recent codebases.
+  - Sending the entire codebase in every prompt is impossible and expensive.
+  - Semantic retrieval selects only the most relevant functions and classes for the question.
+* **Reusing Semantic Search**: DevPilot v0.7 reuses the high-speed Qdrant vector search from v0.6 directly—no redundant search systems.
+* **Structured Context Builder**: Converts retrieved `SearchResult` objects into clean context blocks while strictly enforcing chunk count (`MAX_CONTEXT_CHUNKS`) and character limits (`MAX_CONTEXT_CHARACTERS`) to prevent prompt overflow.
+* **Strict Anti-Hallucination Guardrails**: Prompts instruct the LLM to only answer using provided code, to acknowledge when context is insufficient, and never invent non-existent files or functions.
+* **Verified Source Citations**: File paths, symbol names, and line spans are preserved from actual search results and displayed alongside LLM answers.
+* **Pluggable LLM Provider Abstraction**: Supports Groq (default) with clean error handling, bounded retries, and decoupled interfaces for future providers.
 
 ---
 
-## Installation
+## Installation & Setup
 
 1. Clone or download this repository.
 2. Ensure you have Python 3.10+ installed.
@@ -98,15 +90,30 @@ Ranked SearchResult Objects
    pip install -r requirements.txt
    ```
 
+4. Configure Environment Variables (Optional / for Live LLM):
+   Copy `.env.example` to `.env` and configure your API key:
+   ```bash
+   cp .env.example .env
+   ```
+   Example configuration:
+   ```dotenv
+   LLM_PROVIDER=groq
+   LLM_MODEL=llama-3.3-70b-versatile
+   LLM_API_KEY=gsk_your_groq_api_key_here
+   MAX_CONTEXT_CHUNKS=5
+   MAX_CONTEXT_CHARACTERS=20000
+   ```
+
 ---
 
 ## Usage
 
-Run the tool by using `app.main` as a module.
+Run DevPilot using `app.main` as a module.
 
 ### CLI Help
 ```bash
 python -m app.main --help
+python -m app.main ask --help
 ```
 
 ### 1. Scan Directory (v0.1)
@@ -117,136 +124,103 @@ python -m app.main scan .
 ### 2. Parse Python AST (v0.2)
 ```bash
 python -m app.main parse .
-# or for JSON:
-python -m app.main parse . --json
 ```
 
 ### 3. Index Code Chunks (v0.3)
 ```bash
 python -m app.main index .
-# or for JSON:
-python -m app.main index . --json
 ```
 
-### 4. Generate Code Embeddings (v0.4)
+### 4. Generate Local Embeddings (v0.4)
 ```bash
 python -m app.main embed .
 ```
 
-### 5. Generate Query Embedding (v0.4)
+### 5. Store Vectors in Qdrant (v0.5)
 ```bash
-python -m app.main embed-query "where is user authentication handled?"
+python -m app.main store sample_project/
 ```
 
-### 6. Store Vectors in Qdrant (v0.5)
-```bash
-python -m app.main store .
-```
-
-### 7. Collection Information (v0.5)
-```bash
-python -m app.main store-info
-```
-
-### 8. Retrieve Point by Chunk ID (v0.5)
-```bash
-python -m app.main store-get <chunk_id>
-```
-
-### 9. Reset Collection (v0.5)
-```bash
-python -m app.main store-reset
-```
-
-### 10. Semantic Code Search (v0.6)
-Search the indexed codebase using natural-language queries:
-
+### 6. Semantic Code Search (v0.6)
 ```bash
 python -m app.main search "where is user authentication handled?"
 ```
 
-Example output:
+### 7. Codebase Question Answering with RAG (v0.7)
+Ask natural language questions about your codebase:
+
+```bash
+python -m app.main ask "Where is user authentication handled and how does password hashing work?"
+```
+
+Example human-readable output:
 ```text
-DevPilot v0.6 - Semantic Code Search
+DevPilot v0.7 - Codebase Q&A
 
-Query:
-where is user authentication handled?
+Question:
+Where is user authentication handled and how does password hashing work?
 
-Results:
+Answer:
 
-[1] Score: 0.6618
-File: sample_project\auth.py
-Symbol: login_user
-Type: function
-Lines: 14-15
+Authentication is handled in `sample_project/auth.py` through the `AuthService` class and the `login_user()` function.
 
-def login_user(username, password):
-    pass
+Password hashing is implemented inside `AuthService.hash_password()` (lines 8-9), which hashes the input password combined with a secret key using SHA-256 (`hashlib.sha256((password + self.secret).encode()).hexdigest()`).
 
-[2] Score: 0.6611
-File: sample_project\auth.py
-Symbol: __init__
-Type: method
-Class: AuthService
-Lines: 5-6
+Password verification is performed by `AuthService.verify_password()` (lines 11-12), which checks if the newly computed hash matches the stored hash.
 
-def __init__(self):
-        self.secret = os.getenv("SECRET_KEY", "default_secret")
+Sources:
 
-[3] Score: 0.6603
-File: sample_project\auth.py
-Symbol: AuthService
-Type: class
-Lines: 4-12
+1. sample_project/auth.py
+   AuthService()
+   Lines: 4-12
+   Score: 0.7420
 
-class AuthService:
-    def __init__(self):
-        self.secret = os.getenv("SECRET_KEY", "default_secret")
+2. sample_project/auth.py
+   login_user()
+   Lines: 14-15
+   Score: 0.7105
 
-    def hash_password(self, password):
-        return hashlib.sha256((password + self.secret).encode()).hexdigest()
-
-    def verify_password(self, password, hashed):
-        return self.hash_password(password) == hashed
-
-Found 3 relevant results.
+Search time: 0.08s
+LLM time: 1.12s
+Total time: 1.20s
 ```
 
-#### Limit Results with Top-K:
+#### JSON Output Mode:
 ```bash
-python -m app.main search "password verification" --top-k 3
+python -m app.main ask "where is user authentication handled?" --json
 ```
 
-#### Filter by Symbol Type:
+#### Filter by Directory or Symbol Type:
 ```bash
-python -m app.main search "authentication" --type function
-```
-
-#### Filter by Directory Path or Extension:
-```bash
-python -m app.main search "authentication" --path sample_project/ --extension .py
-```
-
-#### Filter by Minimum Similarity Score:
-```bash
-python -m app.main search "authentication" --min-score 0.65
-```
-
-#### JSON Output:
-```bash
-python -m app.main search "where is user authentication handled?" --json
+python -m app.main ask "how are users retrieved?" --path sample_project/ --top-k 3
 ```
 
 ---
 
 ## Running Tests
 
-Tests are written using `pytest`. All tests execute locally using in-memory or temporary disk storage without external network dependencies.
+Run all unit and mock integration tests using `pytest` without requiring an API key or internet access:
+
 ```bash
 python -m pytest tests/
 ```
 
+### Running Opt-In Real LLM Tests:
+```bash
+RUN_LLM_INTEGRATION_TESTS=1 LLM_API_KEY=your_key pytest tests/test_rag.py -k test_real_groq_provider_live
+```
+
 ---
 
-## Future Versions (Roadmap)
-* **DevPilot v0.7+**: LLM / RAG Integration & Agentic Workflow
+## Scope & Roadmap
+
+| Feature Area | Status in v0.7 | Roadmap |
+| :--- | :--- | :--- |
+| **Project Scanner & Tree-sitter Parser** | Completed (v0.1 - v0.2) | Maintained |
+| **Code Chunking & Local Embeddings** | Completed (v0.3 - v0.4) | Maintained |
+| **Qdrant Vector Store & Semantic Search** | Completed (v0.5 - v0.6) | Maintained |
+| **RAG & Grounded Codebase Q&A** | **Completed (v0.7)** | Maintained |
+| **AI Agents & Autonomous Workflows** | Out of Scope | Future version |
+| **Tool Calling & Execution** | Out of Scope | Future version |
+| **Code Modification & File Editing** | Out of Scope | Future version |
+| **VS Code Extension & React UI** | Out of Scope | Future version |
