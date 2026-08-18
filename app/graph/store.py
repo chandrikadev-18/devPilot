@@ -18,7 +18,7 @@ class GraphStore:
     In-memory graph database storing code nodes and directed relationship edges.
     """
 
-    def __init__(self):
+    def __init__(self, metadata: Optional[Dict[str, Any]] = None):
         self._nodes: Dict[str, GraphNode] = {}
         self._edges: List[GraphEdge] = []
         self._outgoing: Dict[str, List[GraphEdge]] = defaultdict(list)
@@ -26,6 +26,7 @@ class GraphStore:
         self._nodes_by_name: Dict[str, List[str]] = defaultdict(list)
         self._nodes_by_file: Dict[str, List[str]] = defaultdict(list)
         self._edge_keys: Set[tuple] = set()
+        self.metadata: Dict[str, Any] = metadata if metadata is not None else {}
 
     def add_node(self, node: GraphNode) -> None:
         """Adds or updates a node in the graph."""
@@ -124,6 +125,7 @@ class GraphStore:
             "version": "1.0",
             "total_nodes": len(self._nodes),
             "total_edges": len(self._edges),
+            "metadata": self.metadata,
             "nodes": [node.to_dict() for node in self._nodes.values()],
             "edges": [edge.to_dict() for edge in self._edges],
         }
@@ -131,7 +133,7 @@ class GraphStore:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GraphStore":
         """Deserializes graph from a dictionary."""
-        store = cls()
+        store = cls(metadata=data.get("metadata", {}))
         for node_data in data.get("nodes", []):
             store.add_node(GraphNode.from_dict(node_data))
         for edge_data in data.get("edges", []):

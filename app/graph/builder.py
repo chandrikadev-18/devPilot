@@ -57,6 +57,7 @@ class GraphBuilder:
 
         # Step 2: Extract AST elements from all files
         parsed_files: Dict[str, ParsedFileRelationships] = {}
+        failed_files: List[str] = []
         for file_p in py_files:
             try:
                 rel_path = file_p.relative_to(project_root).as_posix()
@@ -68,7 +69,14 @@ class GraphBuilder:
                 parsed.file_path = rel_path
                 parsed_files[rel_path] = parsed
             except Exception:
+                failed_files.append(rel_path)
                 continue
+
+        store.metadata = {
+            "files_processed": len(parsed_files),
+            "files_failed": len(failed_files),
+            "failed_files": failed_files,
+        }
 
         # Step 3: Create nodes for files, classes, functions, methods, and modules
         # Also build lookup dictionaries for deterministic name resolution

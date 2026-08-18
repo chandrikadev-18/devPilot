@@ -13,7 +13,12 @@ from app.graph.models import EdgeType, GraphNode, NodeType, normalize_graph_path
 from app.graph.store import GraphStore
 
 
-def _resolve_target_nodes(graph: GraphStore, symbol: str) -> List[GraphNode]:
+class AmbiguousSymbolError(Exception):
+    """Raised when a symbol name matches multiple distinct nodes and cannot be disambiguated."""
+    pass
+
+
+def _resolve_target_nodes(graph: GraphStore, symbol: str, allow_multiple: bool = False) -> List[GraphNode]:
     """Resolves a symbol string (node ID, symbol name, or class.method) to matching GraphNode(s)."""
     if not symbol or not symbol.strip():
         return []
@@ -32,17 +37,35 @@ def _resolve_target_nodes(graph: GraphStore, symbol: str) -> List[GraphNode]:
         m_name = parts[-1]
         nodes = graph.find_nodes_by_name(m_name)
         matched = [n for n in nodes if n.node_type == NodeType.METHOD and n.metadata.get("parent_class") == parts[0]]
+        if len(matched) == 1:
+            return matched
+        if len(matched) > 1 and not allow_multiple:
+            raise AmbiguousSymbolError(
+                f"Symbol '{symbol}' is ambiguous and matches multiple entities: {[n.id for n in matched]}"
+            )
         if matched:
             return matched
 
     # 3. By symbol name
     nodes = graph.find_nodes_by_name(target)
+    if len(nodes) == 1:
+        return nodes
+    if len(nodes) > 1 and not allow_multiple:
+        raise AmbiguousSymbolError(
+            f"Symbol '{symbol}' is ambiguous and matches multiple entities: {[n.id for n in nodes]}"
+        )
     if nodes:
         return nodes
 
     # 4. Partial file path match
     norm_t = normalize_graph_path(target)
     file_nodes = [n for n in graph.get_nodes(NodeType.FILE) if norm_t in n.file_path]
+    if len(file_nodes) == 1:
+        return file_nodes
+    if len(file_nodes) > 1 and not allow_multiple:
+        raise AmbiguousSymbolError(
+            f"Symbol '{symbol}' is ambiguous and matches multiple files: {[n.id for n in file_nodes]}"
+        )
     if file_nodes:
         return file_nodes
 
@@ -53,7 +76,11 @@ def get_callers(graph: GraphStore, symbol: str) -> List[Dict[str, Any]]:
     """
     Returns all functions and methods that directly call the given symbol.
     """
-    target_nodes = _resolve_target_nodes(graph, symbol)
+    try:
+        target_nodes = _resolve_target_nodes(graph, symbol, allow_multiple=True)
+    except AmbiguousSymbolError:
+        target_nodes = []
+
     if not target_nodes:
         return []
 
@@ -84,7 +111,11 @@ def get_callees(graph: GraphStore, symbol: str) -> List[Dict[str, Any]]:
     """
     Returns all functions and methods called by the given symbol.
     """
-    source_nodes = _resolve_target_nodes(graph, symbol)
+    try:
+        source_nodes = _resolve_target_nodes(graph, symbol, allow_multiple=True)
+    except AmbiguousSymbolError:
+        source_nodes = []
+
     if not source_nodes:
         return []
 
@@ -119,7 +150,20 @@ def get_dependencies(
     """
     Traverses downstream CALLS dependencies up to the specified depth with cycle prevention.
     """
-    start_nodes = _resolve_target_nodes(graph, symbol)
+    if depth < 1 or depth > 10:
+        raise ValueError(f"Depth must be between 1 and 10, got {depth}")
+
+    try:
+        start_nodes = _resolve_target_nodes(graph, symbol, allow_multiple=True)
+    except AmbiguousSymbolError as e:
+        return {
+            "symbol": symbol,
+            "depth": depth,
+            "error": str(e),
+            "total_dependencies": 0,
+            "dependencies": [],
+        }
+
     if not start_nodes:
         return {
             "symbol": symbol,
@@ -128,7 +172,7 @@ def get_dependencies(
             "dependencies": [],
         }
 
-    max_depth = max(1, depth)
+    max_depth = depth
     dependencies: List[Dict[str, Any]] = []
     visited: Set[str] = {n.id for n in start_nodes}
 
@@ -175,6 +219,83 @@ def get_dependencies(
     }
 
 
+def get_dependents(
+    graph: GraphStore,
+    symbol: str,
+    depth: int = 1,
+) -> Dict[str, Any]:
+    """
+    Traverses reverse/upstream CALLS dependencies (who calls this) up to the specified depth.
+    """
+    if depth < 1 or depth > 10:
+        raise ValueError(f"Depth must be between 1 and 10, got {depth}")
+
+    try:
+        start_nodes = _resolve_target_nodes(graph, symbol, allow_multiple=True)
+    except AmbiguousSymbolError as e:
+        return {
+            "symbol": symbol,
+            "depth": depth,
+            "error": str(e),
+            "total_dependents": 0,
+            "dependents": [],
+        }
+
+    if not start_nodes:
+        return {
+            "symbol": symbol,
+            "depth": depth,
+            "total_dependents": 0,
+            "dependents": [],
+        }
+
+    max_depth = depth
+    dependents: List[Dict[str, Any]] = []
+    visited: Set[str] = {n.id for n in start_nodes}
+
+    # Queue items: (current_node, current_depth, call_path)
+    queue = deque([(n, 0, [n.name]) for n in start_nodes])
+
+    while queue:
+        curr_node, curr_d, path = queue.popleft()
+        if curr_d >= max_depth:
+            continue
+
+        incoming = graph.get_incoming_edges(curr_node.id, edge_type=EdgeType.CALLS)
+        for edge in incoming:
+            caller_n = graph.get_node(edge.source_id)
+            if not caller_n:
+                continue
+
+            next_depth = curr_d + 1
+            next_path = [caller_n.name] + path
+
+            dep_entry = {
+                "id": caller_n.id,
+                "name": caller_n.name,
+                "node_type": caller_n.node_type.value,
+                "file_path": caller_n.file_path,
+                "start_line": caller_n.start_line,
+                "end_line": caller_n.end_line,
+                "call_line": edge.line_number,
+                "depth": next_depth,
+                "calls_target": curr_node.name,
+                "dependent_path": " -> ".join(next_path),
+            }
+            dependents.append(dep_entry)
+
+            if caller_n.id not in visited:
+                visited.add(caller_n.id)
+                queue.append((caller_n, next_depth, next_path))
+
+    return {
+        "symbol": symbol,
+        "depth": max_depth,
+        "total_dependents": len(dependents),
+        "dependents": dependents,
+    }
+
+
 def get_impact(
     graph: GraphStore,
     symbol: str,
@@ -183,7 +304,24 @@ def get_impact(
     """
     Performs static dependency impact analysis: discovers direct and indirect upstream callers.
     """
-    start_nodes = _resolve_target_nodes(graph, symbol)
+    if depth < 1 or depth > 10:
+        raise ValueError(f"Depth must be between 1 and 10, got {depth}")
+
+    try:
+        start_nodes = _resolve_target_nodes(graph, symbol, allow_multiple=True)
+    except AmbiguousSymbolError as e:
+        return {
+            "symbol": symbol,
+            "depth": depth,
+            "error": str(e),
+            "total_impacted": 0,
+            "direct_callers": [],
+            "indirect_callers": [],
+            "direct_dependents": [],
+            "indirect_dependents": [],
+            "impacted_files": [],
+        }
+
     if not start_nodes:
         return {
             "symbol": symbol,
@@ -191,10 +329,12 @@ def get_impact(
             "total_impacted": 0,
             "direct_callers": [],
             "indirect_callers": [],
+            "direct_dependents": [],
+            "indirect_dependents": [],
             "impacted_files": [],
         }
 
-    max_depth = max(1, depth)
+    max_depth = depth
     direct_callers: List[Dict[str, Any]] = []
     indirect_callers: List[Dict[str, Any]] = []
     impacted_files: Set[str] = set()
@@ -241,9 +381,12 @@ def get_impact(
     return {
         "symbol": symbol,
         "depth": max_depth,
+        "analysis_type": "STATIC DEPENDENCY IMPACT",
         "total_impacted": len(direct_callers) + len(indirect_callers),
         "direct_callers": direct_callers,
         "indirect_callers": indirect_callers,
+        "direct_dependents": direct_callers,
+        "indirect_dependents": indirect_callers,
         "impacted_files": sorted(impacted_files),
     }
 

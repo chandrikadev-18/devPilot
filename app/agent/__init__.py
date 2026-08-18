@@ -17,6 +17,7 @@ from app.agent.tools import (
     create_get_callers_tool,
     create_get_commit_tool,
     create_get_dependencies_tool,
+    create_get_dependents_tool,
     create_get_file_blame_tool,
     create_get_file_dependencies_tool,
     create_get_file_history_tool,
@@ -97,11 +98,15 @@ def create_default_tool_registry(
     dep_spec = create_get_dependencies_tool(project_root=root)
     registry.register(Tool(**dep_spec))
 
-    # 13. get_impact (v1.0)
+    # 13. get_dependents (v1.0)
+    dependents_spec = create_get_dependents_tool(project_root=root)
+    registry.register(Tool(**dependents_spec))
+
+    # 14. get_impact (v1.0)
     impact_spec = create_get_impact_tool(project_root=root)
     registry.register(Tool(**impact_spec))
 
-    # 14. get_file_dependencies (v1.0)
+    # 15. get_file_dependencies (v1.0)
     file_dep_spec = create_get_file_dependencies_tool(project_root=root)
     registry.register(Tool(**file_dep_spec))
 
@@ -156,6 +161,7 @@ __all__ = [
     "create_get_callers_tool",
     "create_get_callees_tool",
     "create_get_dependencies_tool",
+    "create_get_dependents_tool",
     "create_get_impact_tool",
     "create_get_file_dependencies_tool",
 ]

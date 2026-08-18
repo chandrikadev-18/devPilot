@@ -70,6 +70,7 @@ from app.graph import (
     get_callees,
     get_callers,
     get_dependencies,
+    get_dependents,
     get_file_dependencies,
     get_impact,
     load_graph,
@@ -1104,20 +1105,26 @@ def run_graph_build(directory: str = ".", output_path: str = "data/graph.json"):
         contains_cnt = len([e for e in edges if e.edge_type == EdgeType.CONTAINS])
         defines_cnt = len([e for e in edges if e.edge_type == EdgeType.DEFINES])
 
+        meta = graph.metadata or {}
+        files_proc = meta.get("files_processed", files_cnt)
+        files_failed = meta.get("files_failed", 0)
+
         print(f"DevPilot v1.0 - Code Dependency Graph Built\n")
         print(f"Target Directory: {root.name}")
         print(f"Output File:      {out}\n")
-        print(f"Nodes ({len(nodes)}):")
-        print(f"  - Files:     {files_cnt}")
-        print(f"  - Classes:   {classes_cnt}")
-        print(f"  - Functions: {funcs_cnt}")
-        print(f"  - Methods:   {methods_cnt}")
-        print(f"  - Modules:   {modules_cnt}\n")
-        print(f"Edges ({len(edges)}):")
-        print(f"  - CALLS:     {calls_cnt}")
-        print(f"  - IMPORTS:   {imports_cnt}")
-        print(f"  - CONTAINS:  {contains_cnt}")
-        print(f"  - DEFINES:   {defines_cnt}")
+        print(f"Files Processed:  {files_proc}")
+        print(f"Files Failed:     {files_failed}\n")
+        print(f"Nodes Created ({len(nodes)}):")
+        print(f"  - Files:        {files_cnt}")
+        print(f"  - Classes:      {classes_cnt}")
+        print(f"  - Functions:    {funcs_cnt}")
+        print(f"  - Methods:      {methods_cnt}")
+        print(f"  - Modules:      {modules_cnt}\n")
+        print(f"Edges Created ({len(edges)}):")
+        print(f"  - CALLS:        {calls_cnt}")
+        print(f"  - IMPORTS:      {imports_cnt}")
+        print(f"  - CONTAINS:     {contains_cnt}")
+        print(f"  - DEFINES:      {defines_cnt}")
     except Exception as e:
         print(f"Error building graph: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1225,7 +1232,8 @@ def run_graph_dependencies(symbol: str, depth: int = 1, graph_path: Optional[str
     """Traverses downstream call dependencies for a symbol."""
     try:
         graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
-        dep_result = get_dependencies(graph, symbol=symbol, depth=depth)
+        bounded_depth = max(1, min(depth, 10))
+        dep_result = get_dependencies(graph, symbol=symbol, depth=bounded_depth)
 
         if as_json:
             print(json.dumps(dep_result, indent=2))
@@ -1246,6 +1254,35 @@ def run_graph_dependencies(symbol: str, depth: int = 1, graph_path: Optional[str
             print(f"   Path: {d['call_path']}\n")
     except Exception as e:
         print(f"Error querying dependencies: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_graph_dependents(symbol: str, depth: int = 1, graph_path: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Traverses upstream reverse call dependencies (who calls this) for a symbol."""
+    try:
+        graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
+        bounded_depth = max(1, min(depth, 10))
+        dep_result = get_dependents(graph, symbol=symbol, depth=bounded_depth)
+
+        if as_json:
+            print(json.dumps(dep_result, indent=2))
+            return
+
+        print("DevPilot v1.0 - Code Dependency Graph (Dependents)\n")
+        print(f"Symbol: {dep_result['symbol']} (Depth: {dep_result['depth']})")
+        print(f"Total Dependents: {dep_result['total_dependents']}\n")
+
+        if not dep_result["dependents"]:
+            print(f"No upstream callers found for '{symbol}'.")
+            return
+
+        for idx, d in enumerate(dep_result["dependents"], start=1):
+            line_str = f":{d['start_line']}" if d.get("start_line") else ""
+            print(f"{idx}. {d['name']} (Depth {d['depth']})")
+            print(f"   {d['file_path']}{line_str}")
+            print(f"   Path: {d['dependent_path']}\n")
+    except Exception as e:
+        print(f"Error querying dependents: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -1358,6 +1395,7 @@ def main():
         "graph-callers",
         "graph-callees",
         "graph-dependencies",
+        "graph-dependents",
         "graph-impact",
         "graph-file-dependencies",
         "-h",
@@ -1516,15 +1554,23 @@ def main():
     # graph-dependencies subcommand (v1.0)
     graph_dep_parser = subparsers.add_parser("graph-dependencies", help="Traverse downstream call dependencies for a symbol")
     graph_dep_parser.add_argument("symbol", type=str, help="Symbol name or ID to traverse dependencies from")
-    graph_dep_parser.add_argument("--depth", type=int, default=1, help="Maximum traversal depth (default: 1)")
+    graph_dep_parser.add_argument("--depth", type=int, default=1, help="Maximum traversal depth (default: 1, max: 10)")
     graph_dep_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
     graph_dep_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
     graph_dep_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # graph-dependents subcommand (v1.0)
+    graph_dependents_parser = subparsers.add_parser("graph-dependents", help="Traverse upstream reverse call dependencies for a symbol")
+    graph_dependents_parser.add_argument("symbol", type=str, help="Symbol name or ID to find reverse dependents for")
+    graph_dependents_parser.add_argument("--depth", type=int, default=1, help="Maximum upstream traversal depth (default: 1, max: 10)")
+    graph_dependents_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
+    graph_dependents_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
+    graph_dependents_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
     # graph-impact subcommand (v1.0)
     graph_impact_parser = subparsers.add_parser("graph-impact", help="Perform static dependency impact analysis for a symbol")
     graph_impact_parser.add_argument("symbol", type=str, help="Symbol name or ID to evaluate impact for")
-    graph_impact_parser.add_argument("--depth", type=int, default=2, help="Maximum upstream depth (default: 2)")
+    graph_impact_parser.add_argument("--depth", type=int, default=2, help="Maximum upstream depth (default: 2, max: 10)")
     graph_impact_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
     graph_impact_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
     graph_impact_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
@@ -1655,6 +1701,14 @@ def main():
         )
     elif args.command == "graph-dependencies":
         run_graph_dependencies(
+            symbol=args.symbol,
+            depth=args.depth,
+            graph_path=args.graph,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "graph-dependents":
+        run_graph_dependents(
             symbol=args.symbol,
             depth=args.depth,
             graph_path=args.graph,

@@ -861,11 +861,59 @@ def create_get_dependencies_tool(
             "type": "object",
             "properties": {
                 "symbol": {"type": "string", "description": "Name or ID of the root symbol to traverse dependencies for"},
-                "depth": {"type": "integer", "minimum": 1, "description": "Maximum traversal depth (default: 1)"},
+                "depth": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Maximum traversal depth (default: 1, max: 10)"},
             },
             "required": ["symbol"],
         },
         "func": get_dependencies_tool,
+        "safety_level": "read_only",
+    }
+
+
+def create_get_dependents_tool(
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for get_dependents tool."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def get_dependents_tool(symbol: str, depth: int = 1) -> Dict[str, Any]:
+        """Performs multi-step upstream reverse dependency traversal (callers) of a symbol."""
+        from app.graph.queries import get_dependents
+
+        active_graph = _resolve_graph(graph, root)
+        bounded_depth = max(1, min(depth, 10))
+        dep_result = get_dependents(active_graph, symbol=symbol, depth=bounded_depth)
+
+        sources = [
+            {
+                "source_type": "graph",
+                "symbol_name": d["name"],
+                "file_path": d["file_path"],
+                "start_line": d["start_line"],
+                "end_line": d["end_line"],
+                "relationship": f"DEPENDENT_D{d['depth']}",
+            }
+            for d in dep_result.get("dependents", [])
+        ]
+
+        return {
+            "data": dep_result,
+            "sources": sources,
+        }
+
+    return {
+        "name": "get_dependents",
+        "description": "Performs multi-step upstream reverse dependency traversal of functions/methods that call a symbol.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Name or ID of the symbol to find reverse dependents for"},
+                "depth": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Maximum upstream traversal depth (default: 1, max: 10)"},
+            },
+            "required": ["symbol"],
+        },
+        "func": get_dependents_tool,
         "safety_level": "read_only",
     }
 
@@ -882,7 +930,8 @@ def create_get_impact_tool(
         from app.graph.queries import get_impact
 
         active_graph = _resolve_graph(graph, root)
-        impact_result = get_impact(active_graph, symbol=symbol, depth=depth)
+        bounded_depth = max(1, min(depth, 10))
+        impact_result = get_impact(active_graph, symbol=symbol, depth=bounded_depth)
 
         all_callers = impact_result.get("direct_callers", []) + impact_result.get("indirect_callers", [])
         sources = [
@@ -908,7 +957,7 @@ def create_get_impact_tool(
             "type": "object",
             "properties": {
                 "symbol": {"type": "string", "description": "Name or ID of the symbol to evaluate impact for"},
-                "depth": {"type": "integer", "minimum": 1, "description": "Maximum upstream traversal depth (default: 2)"},
+                "depth": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Maximum upstream traversal depth (default: 2, max: 10)"},
             },
             "required": ["symbol"],
         },

@@ -10,6 +10,7 @@ from app.graph.queries import (
     get_callees,
     get_callers,
     get_dependencies,
+    get_dependents,
     get_file_dependencies,
     get_impact,
 )
@@ -99,6 +100,40 @@ def test_get_impact_analysis():
         assert "auth.py" in impact["impacted_files"]
 
 
+def test_get_dependents():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        _setup_test_project(root)
+
+        graph = GraphBuilder().build(root)
+
+        # Dependents of verify_pw (who calls it upstream): authenticate, login_handler
+        deps = get_dependents(graph, "verify_pw", depth=2)
+        assert deps["total_dependents"] >= 1
+        dep_names = [d["name"] for d in deps["dependents"]]
+        assert "authenticate" in dep_names
+
+
+def test_cycle_handling():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "cyclic.py").write_text("""
+def func_a():
+    return func_b()
+
+def func_b():
+    return func_a()
+""", encoding="utf-8")
+
+        graph = GraphBuilder().build(root)
+        # Should not hang in infinite loop on cycles
+        dep = get_dependencies(graph, "func_a", depth=5)
+        assert dep["total_dependencies"] == 2
+        names = [d["name"] for d in dep["dependencies"]]
+        assert "func_b" in names
+        assert "func_a" in names
+
+
 def test_get_file_dependencies():
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
@@ -112,3 +147,15 @@ def test_get_file_dependencies():
         symbol_names = [s["name"] for s in file_deps["defined_symbols"]]
         assert "verify_pw" in symbol_names
         assert "authenticate" in symbol_names
+
+
+def test_ambiguous_symbols_handling():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "mod1.py").write_text("def common_name(): pass\n", encoding="utf-8")
+        (root / "mod2.py").write_text("def common_name(): pass\n", encoding="utf-8")
+
+        graph = GraphBuilder().build(root)
+        # If searching by ambiguous short name without specifying file, get_dependencies returns error note
+        res = get_dependencies(graph, "common_name", depth=1)
+        assert "error" in res or res["total_dependencies"] == 0

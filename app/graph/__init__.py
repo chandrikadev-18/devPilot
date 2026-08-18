@@ -20,9 +20,11 @@ from app.graph.models import (
     normalize_graph_path,
 )
 from app.graph.queries import (
+    AmbiguousSymbolError,
     get_callees,
     get_callers,
     get_dependencies,
+    get_dependents,
     get_file_dependencies,
     get_impact,
 )
@@ -50,6 +52,8 @@ __all__ = [
     "get_callers",
     "get_callees",
     "get_dependencies",
+    "get_dependents",
     "get_impact",
     "get_file_dependencies",
+    "AmbiguousSymbolError",
 ]
