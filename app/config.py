@@ -109,3 +109,33 @@ def get_default_min_score() -> Optional[float]:
         except ValueError:
             return None
     return None
+
+
+def get_max_agent_iterations() -> int:
+    """Returns the maximum number of reasoning/tool iterations for the agent."""
+    val = os.getenv("MAX_AGENT_ITERATIONS", "5")
+    try:
+        parsed = int(val)
+        return max(1, parsed)
+    except ValueError:
+        return 5
+
+
+def get_max_tool_calls() -> int:
+    """Returns the maximum number of total tool calls allowed per agent run."""
+    val = os.getenv("MAX_TOOL_CALLS", "10")
+    try:
+        parsed = int(val)
+        return max(1, parsed)
+    except ValueError:
+        return 10
+
+
+def get_max_tool_result_characters() -> int:
+    """Returns the maximum character limit for an individual tool result."""
+    val = os.getenv("MAX_TOOL_RESULT_CHARACTERS", "12000")
+    try:
+        parsed = int(val)
+        return max(500, parsed)
+    except ValueError:
+        return 12000

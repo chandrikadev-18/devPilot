@@ -1,11 +1,13 @@
 """
-LLM Provider Base Interfaces and Exception Hierarchy.
+LLM Provider Base Interfaces, Exception Hierarchy, and Chat Models.
 
-Defines the abstract contract for LLM providers and custom domain exceptions.
+Defines the abstract contract for LLM providers, tool call models, and custom domain exceptions.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from dataclasses import dataclass, field
+import json
+from typing import Any, Dict, List, Optional
 
 
 class LLMError(Exception):
@@ -38,6 +40,33 @@ class LLMEmptyResponseError(LLMProviderError):
     pass
 
 
+@dataclass
+class ToolCall:
+    """Represents a tool invocation requested by the LLM."""
+    id: str
+    name: str
+    arguments: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "arguments": self.arguments,
+        }
+
+
+@dataclass
+class LLMChatResponse:
+    """Represents the raw response from an LLM chat/completion call."""
+    content: Optional[str] = None
+    tool_calls: Optional[List[ToolCall]] = None
+    finish_reason: Optional[str] = None
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
+
+
 class LLMProvider(ABC):
     """
     Abstract interface for LLM providers.
@@ -56,7 +85,28 @@ class LLMProvider(ABC):
         """Returns the model name identifier."""
         pass
 
-    @abstractmethod
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> LLMChatResponse:
+        """
+        Executes a chat completion request, optionally with tool definitions.
+        Default implementation converts messages to prompt and delegates to generate().
+        """
+        prompt_parts = []
+        system_prompt = None
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "system":
+                system_prompt = content
+            else:
+                prompt_parts.append(f"{role}: {content}")
+        full_prompt = "\n\n".join(prompt_parts)
+        text = self.generate(prompt=full_prompt, system_prompt=system_prompt)
+        return LLMChatResponse(content=text)
+
     def generate(
         self,
         prompt: str,
@@ -64,19 +114,18 @@ class LLMProvider(ABC):
     ) -> str:
         """
         Generates text completion from the LLM provider.
-
-        Args:
-            prompt: The user prompt containing question and codebase context.
-            system_prompt: Optional system instructions guiding the LLM behavior.
-
-        Returns:
-            The generated response string.
-
-        Raises:
-            LLMAuthenticationError: If API key is missing or unauthorized.
-            LLMRateLimitError: If provider rate limit is encountered.
-            LLMTimeoutError: If the request times out.
-            LLMEmptyResponseError: If the generated output is empty.
-            LLMProviderError: For any other provider communication failure.
+        Maintains backward compatibility with v0.7 RAG pipeline.
         """
-        pass
+        if not prompt or not prompt.strip():
+            raise LLMProviderError("Cannot generate response for an empty prompt.")
+
+        messages = []
+        if system_prompt and system_prompt.strip():
+            messages.append({"role": "system", "content": system_prompt.strip()})
+        messages.append({"role": "user", "content": prompt.strip()})
+
+        response = self.chat(messages=messages)
+        if not response.content or not response.content.strip():
+            raise LLMEmptyResponseError("LLM provider returned an empty response.")
+
+        return response.content.strip()

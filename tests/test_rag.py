@@ -51,6 +51,10 @@ class MockLLMProvider(LLMProvider):
         self.last_system_prompt = system_prompt
         return self._canned_response
 
+    def chat(self, messages, tools=None):
+        self.call_count += 1
+        return LLMChatResponse(content=self._canned_response)
+
 
 @pytest.fixture
 def mock_searcher():

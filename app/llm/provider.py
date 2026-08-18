@@ -1,12 +1,13 @@
 """
 LLM Provider Implementations and Factory Function.
 
-Contains Groq provider implementation with error translation,
+Contains Groq provider implementation with tool calling support, error translation,
 bounded retries, and API key protection.
 """
 
+import json
 import time
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from app.config import (
     get_llm_api_key,
@@ -15,18 +16,21 @@ from app.config import (
 )
 from app.llm.base import (
     LLMAuthenticationError,
+    LLMChatResponse,
     LLMEmptyResponseError,
     LLMError,
     LLMProvider,
     LLMProviderError,
     LLMRateLimitError,
     LLMTimeoutError,
+    ToolCall,
 )
 
 
 class GroqProvider(LLMProvider):
     """
     Groq LLM Provider implementation using the official Groq Python SDK.
+    Supports chat completion and native OpenAI-compatible tool/function calling.
     """
 
     def __init__(
@@ -73,21 +77,16 @@ class GroqProvider(LLMProvider):
                 raise LLMProviderError(f"Failed to initialize Groq client: {e}") from e
         return self._client
 
-    def generate(
+    def chat(
         self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-    ) -> str:
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> LLMChatResponse:
         """
-        Executes a completion request against Groq with bounded retry and error mapping.
+        Executes a chat completion request against Groq, optionally providing tool definitions.
         """
-        if not prompt or not prompt.strip():
-            raise LLMProviderError("Cannot generate response for an empty prompt.")
-
-        messages = []
-        if system_prompt and system_prompt.strip():
-            messages.append({"role": "system", "content": system_prompt.strip()})
-        messages.append({"role": "user", "content": prompt})
+        if not messages:
+            raise LLMProviderError("Cannot execute chat request with empty messages list.")
 
         client = self._get_client()
 
@@ -107,28 +106,63 @@ class GroqProvider(LLMProvider):
             APIConnectionError = Exception
             APIStatusError = Exception
 
+        kwargs: Dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": 0.1,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+
         last_error = None
         for attempt in range(self._max_retries + 1):
             try:
-                chat_completion = client.chat.completions.create(
-                    model=self._model,
-                    messages=messages,
-                    temperature=0.1,
-                )
+                chat_completion = client.chat.completions.create(**kwargs)
 
                 if not chat_completion.choices:
                     raise LLMEmptyResponseError("LLM provider returned no completion choices.")
 
                 choice = chat_completion.choices[0]
-                content = choice.message.content
+                message = choice.message
 
-                if not content or not content.strip():
-                    raise LLMEmptyResponseError("LLM provider returned an empty response.")
+                parsed_tool_calls: Optional[List[ToolCall]] = None
+                raw_tool_calls = getattr(message, "tool_calls", None)
+                if raw_tool_calls:
+                    parsed_tool_calls = []
+                    for raw_tc in raw_tool_calls:
+                        tc_id = getattr(raw_tc, "id", f"call_{int(time.time()*1000)}")
+                        fn_obj = getattr(raw_tc, "function", None)
+                        fn_name = getattr(fn_obj, "name", "") if fn_obj else ""
+                        fn_args_raw = getattr(fn_obj, "arguments", "{}") if fn_obj else "{}"
 
-                return content.strip()
+                        if isinstance(fn_args_raw, str):
+                            try:
+                                fn_args = json.loads(fn_args_raw)
+                            except Exception:
+                                fn_args = {"raw_input": fn_args_raw}
+                        elif isinstance(fn_args_raw, dict):
+                            fn_args = fn_args_raw
+                        else:
+                            fn_args = {}
+
+                        parsed_tool_calls.append(
+                            ToolCall(
+                                id=tc_id,
+                                name=fn_name,
+                                arguments=fn_args,
+                            )
+                        )
+
+                content = getattr(message, "content", None)
+
+                return LLMChatResponse(
+                    content=content,
+                    tool_calls=parsed_tool_calls,
+                    finish_reason=getattr(choice, "finish_reason", None),
+                )
 
             except AuthenticationError as e:
-                # Do not retry authentication failures
                 raise LLMAuthenticationError(
                     f"Groq API authentication failed. Check your API key: {e}"
                 ) from e

@@ -36,6 +36,11 @@ from app.rag import (
     QAResult,
     RAGPipeline,
 )
+from app.agent import (
+    AgentResult,
+    CodebaseAgent,
+    create_codebase_agent,
+)
 
 
 def run_scan(directory: str):
@@ -729,6 +734,137 @@ def run_ask(
     print(f"Total time: {total_time:.2f}s")
 
 
+def run_agent(
+    question: str,
+    top_k: int = 5,
+    min_score: Optional[float] = None,
+    project_dir: Optional[str] = None,
+    as_json: bool = False,
+    debug: bool = False,
+    storage_path: str = DEFAULT_STORAGE_PATH,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+    provider_name: Optional[str] = None,
+    model_name: Optional[str] = None,
+):
+    """Executes AI Agent Codebase Reasoning and Tool Use."""
+    root_path = Path(project_dir or ".").resolve()
+
+    try:
+        embedder = CodeEmbedder()
+        store = QdrantVectorStore(storage_path=storage_path)
+        searcher = SemanticSearcher(
+            embedder=embedder,
+            vector_store=store,
+            collection_name=collection_name,
+        )
+
+        llm = create_llm_provider(
+            provider_name=provider_name,
+            model=model_name,
+        )
+
+        agent = create_codebase_agent(
+            llm=llm,
+            searcher=searcher,
+            project_root=root_path,
+            vector_store=store,
+            collection_name=collection_name,
+        )
+
+        def on_iter_start(it: int):
+            if debug and not as_json:
+                print(f"\n[Agent Iteration {it}]")
+
+        def on_tool(tool_name: str, args: Dict[str, Any]):
+            if as_json:
+                return
+            if debug:
+                print(f"Tool selected: {tool_name}")
+                print(f"Arguments:\n{json.dumps(args, indent=2)}")
+            else:
+                print(f"Tool:\n{tool_name}\n")
+                if "query" in args:
+                    print(f"Query:\n{args['query']}\n")
+                elif "file_path" in args:
+                    print(f"File:\n{args['file_path']}\n")
+                elif "symbol_name" in args:
+                    print(f"Symbol:\n{args['symbol_name']}\n")
+
+        def on_tool_res(tool_name: str, res: Dict[str, Any]):
+            if as_json:
+                return
+            if debug:
+                print(f"Result for {tool_name}:\n{json.dumps(res.get('data') if res.get('success') else res.get('error'), indent=2)}\n")
+            else:
+                sources = res.get("sources", [])
+                if sources:
+                    print("Results:")
+                    for s in sources[:2]:
+                        p = s.get("file_path", "")
+                        sym = s.get("symbol_name", "")
+                        if sym:
+                            print(f"{p}\n{sym}()")
+                        else:
+                            print(f"{p}")
+                    print()
+
+        if not as_json and not debug:
+            print("DevPilot v0.8 - Codebase Agent\n")
+            print(f"Question:\n{question}\n")
+            print("Agent:\n")
+        elif debug and not as_json:
+            print("DevPilot v0.8 - Codebase Agent (Debug Mode)\n")
+            print(f"Question:\n{question}\n")
+
+        result = agent.run(
+            question=question,
+            on_iteration_start=on_iter_start,
+            on_tool_call=on_tool,
+            on_tool_result=on_tool_res,
+        )
+
+    except LLMAuthenticationError:
+        print(f"LLM API key is not configured.\nPlease configure the required environment variable.", file=sys.stderr)
+        sys.exit(1)
+    except (VectorStoreError, ConfigurationMismatchError, ValidationError) as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
+    except LLMError as e:
+        print(f"LLM Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if as_json:
+        print(json.dumps(result.to_dict(), indent=2))
+        return
+
+    print(f"Final Answer:\n\n{result.answer}\n")
+
+    if result.sources:
+        print("Sources:\n")
+        for idx, src in enumerate(result.sources, start=1):
+            print(f"{idx}. {src.get('file_path')}")
+            sym = src.get('symbol_name')
+            if sym and sym != "file" and sym != src.get('file_path'):
+                parent = src.get('parent_symbol')
+                if parent:
+                    print(f"   {parent}.{sym}()")
+                else:
+                    print(f"   {sym}()")
+            if "start_line" in src and "end_line" in src:
+                print(f"   Lines: {src.get('start_line')}-{src.get('end_line')}")
+            if "score" in src:
+                print(f"   Score: {src.get('score'):.4f}")
+            print()
+
+    total_time = result.timing.get("total", 0.0)
+    print(f"Agent iterations: {result.iterations}")
+    print(f"Tool calls: {len(result.tool_calls)}")
+    print(f"Total time: {total_time:.2f}s")
+
+
 def main():
     """Main CLI entry point."""
     
@@ -745,13 +881,14 @@ def main():
         "store-reset",
         "search",
         "ask",
+        "agent",
         "-h",
         "--help",
     ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v0.7 - Code Intelligence and Codebase Q&A")
+    parser = argparse.ArgumentParser(description="DevPilot v0.8 - Code Intelligence and Tool-Using AI Agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -827,6 +964,19 @@ def main():
     ask_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
     ask_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
 
+    # Agent subcommand (v0.8)
+    agent_parser = subparsers.add_parser("agent", help="Ask questions using autonomous tool-using AI agent")
+    agent_parser.add_argument("question", type=str, help="Natural language question about the codebase")
+    agent_parser.add_argument("--top-k", type=int, default=5, help="Maximum search results per search_code call (default: 5)")
+    agent_parser.add_argument("--min-score", type=float, default=None, help="Minimum similarity score threshold")
+    agent_parser.add_argument("--project-dir", type=str, default=".", help="Root directory of the project")
+    agent_parser.add_argument("--provider", type=str, default=None, help="LLM provider name (e.g. groq)")
+    agent_parser.add_argument("--model", type=str, default=None, help="LLM model name (e.g. llama-3.3-70b-versatile)")
+    agent_parser.add_argument("--debug", action="store_true", help="Display verbose step-by-step tool execution trace")
+    agent_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+    agent_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
+    agent_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -868,6 +1018,19 @@ def main():
             path_prefix=args.path,
             symbol_type=args.type,
             as_json=args.json,
+            storage_path=args.storage,
+            collection_name=args.collection,
+            provider_name=args.provider,
+            model_name=args.model,
+        )
+    elif args.command == "agent":
+        run_agent(
+            question=args.question,
+            top_k=args.top_k,
+            min_score=args.min_score,
+            project_dir=args.project_dir,
+            as_json=args.json,
+            debug=args.debug,
             storage_path=args.storage,
             collection_name=args.collection,
             provider_name=args.provider,
