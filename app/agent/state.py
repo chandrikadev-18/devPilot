@@ -23,7 +23,35 @@ class AgentState:
     stopped_reason: str = "running"
 
     def add_source_if_new(self, source: Dict[str, Any]) -> None:
-        """Adds a source citation if not already tracked by chunk_id or file+line."""
+        """Adds a source citation if not already tracked."""
+        source_type = source.get("source_type")
+        if source_type == "git" or "commit_hash" in source:
+            c_hash = source.get("commit_hash") or source.get("short_hash")
+            f_path = source.get("file_path")
+            for existing in self.sources:
+                if (
+                    (existing.get("commit_hash") or existing.get("short_hash")) == c_hash
+                    and existing.get("file_path") == f_path
+                ):
+                    return
+            self.sources.append(source)
+            return
+
+        if source_type == "graph":
+            sym = source.get("symbol_name")
+            f_path = source.get("file_path")
+            rel = source.get("relationship")
+            for existing in self.sources:
+                if (
+                    existing.get("source_type") == "graph"
+                    and existing.get("symbol_name") == sym
+                    and existing.get("file_path") == f_path
+                    and existing.get("relationship") == rel
+                ):
+                    return
+            self.sources.append(source)
+            return
+
         chunk_id = source.get("chunk_id")
         file_path = source.get("file_path")
         symbol = source.get("symbol_name")

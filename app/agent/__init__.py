@@ -13,7 +13,17 @@ from app.agent.tool_registry import Tool, ToolRegistry, ToolValidationError
 from app.agent.tools import (
     SecurityError,
     create_find_symbol_tool,
+    create_get_callees_tool,
+    create_get_callers_tool,
+    create_get_commit_tool,
+    create_get_dependencies_tool,
+    create_get_file_blame_tool,
+    create_get_file_dependencies_tool,
+    create_get_file_history_tool,
     create_get_file_structure_tool,
+    create_get_impact_tool,
+    create_get_last_commit_tool,
+    create_get_recent_commits_tool,
     create_read_file_tool,
     create_search_code_tool,
     resolve_safe_path,
@@ -30,7 +40,7 @@ def create_default_tool_registry(
     collection_name: str = DEFAULT_COLLECTION_NAME,
 ) -> ToolRegistry:
     """
-    Creates and populates a ToolRegistry with the standard read-only codebase tools.
+    Creates and populates a ToolRegistry with the standard read-only codebase, Git, and Graph tools.
     """
     root = (project_root or Path.cwd()).resolve()
     registry = ToolRegistry()
@@ -54,6 +64,46 @@ def create_default_tool_registry(
     # 4. get_file_structure
     struct_spec = create_get_file_structure_tool(project_root=root)
     registry.register(Tool(**struct_spec))
+
+    # 5. get_file_history (v0.9)
+    history_spec = create_get_file_history_tool(project_root=root)
+    registry.register(Tool(**history_spec))
+
+    # 6. get_recent_commits (v0.9)
+    recent_spec = create_get_recent_commits_tool(project_root=root)
+    registry.register(Tool(**recent_spec))
+
+    # 7. get_last_commit (v0.9)
+    last_commit_spec = create_get_last_commit_tool(project_root=root)
+    registry.register(Tool(**last_commit_spec))
+
+    # 8. get_commit (v0.9)
+    commit_spec = create_get_commit_tool(project_root=root)
+    registry.register(Tool(**commit_spec))
+
+    # 9. get_file_blame (v0.9)
+    blame_spec = create_get_file_blame_tool(project_root=root)
+    registry.register(Tool(**blame_spec))
+
+    # 10. get_callers (v1.0)
+    callers_spec = create_get_callers_tool(project_root=root)
+    registry.register(Tool(**callers_spec))
+
+    # 11. get_callees (v1.0)
+    callees_spec = create_get_callees_tool(project_root=root)
+    registry.register(Tool(**callees_spec))
+
+    # 12. get_dependencies (v1.0)
+    dep_spec = create_get_dependencies_tool(project_root=root)
+    registry.register(Tool(**dep_spec))
+
+    # 13. get_impact (v1.0)
+    impact_spec = create_get_impact_tool(project_root=root)
+    registry.register(Tool(**impact_spec))
+
+    # 14. get_file_dependencies (v1.0)
+    file_dep_spec = create_get_file_dependencies_tool(project_root=root)
+    registry.register(Tool(**file_dep_spec))
 
     return registry
 
@@ -98,4 +148,14 @@ __all__ = [
     "create_default_tool_registry",
     "create_codebase_agent",
     "resolve_safe_path",
+    "create_get_file_history_tool",
+    "create_get_recent_commits_tool",
+    "create_get_last_commit_tool",
+    "create_get_commit_tool",
+    "create_get_file_blame_tool",
+    "create_get_callers_tool",
+    "create_get_callees_tool",
+    "create_get_dependencies_tool",
+    "create_get_impact_tool",
+    "create_get_file_dependencies_tool",
 ]

@@ -4,3 +4,4 @@ tree-sitter-python==0.25.0
 sentence-transformers
 qdrant-client
 groq
+GitPython>=3.1.40

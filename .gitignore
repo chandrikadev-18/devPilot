@@ -9,4 +9,6 @@ __pycache__/
 .vscode/
 data/embeddings/
 data/qdrant/
+data/graph.json
+data/graphs/
 data/

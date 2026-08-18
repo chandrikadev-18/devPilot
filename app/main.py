@@ -5,6 +5,11 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from app.scanner.scanner import ProjectScanner
 from app.parser.python_parser import PythonParser
 from app.indexer.chunker import CodeChunk, CodeChunker
@@ -40,6 +45,35 @@ from app.agent import (
     AgentResult,
     CodebaseAgent,
     create_codebase_agent,
+)
+from app.git import (
+    GitBlameError,
+    GitCommitNotFoundError,
+    GitError,
+    GitFileNotFoundError,
+    GitRepository,
+    GitSecurityError,
+    NotAGitRepositoryError,
+    get_commit_detail,
+    get_file_blame,
+    get_file_history,
+    get_last_commit_for_file,
+    get_recent_commits,
+    get_repository,
+    is_git_repository,
+)
+from app.graph import (
+    EdgeType,
+    GraphBuilder,
+    GraphStore,
+    NodeType,
+    get_callees,
+    get_callers,
+    get_dependencies,
+    get_file_dependencies,
+    get_impact,
+    load_graph,
+    save_graph,
 )
 
 
@@ -809,11 +843,11 @@ def run_agent(
                     print()
 
         if not as_json and not debug:
-            print("DevPilot v0.8 - Codebase Agent\n")
+            print("DevPilot v0.9 - Codebase & Git Agent\n")
             print(f"Question:\n{question}\n")
             print("Agent:\n")
         elif debug and not as_json:
-            print("DevPilot v0.8 - Codebase Agent (Debug Mode)\n")
+            print("DevPilot v0.9 - Codebase & Git Agent (Debug Mode)\n")
             print(f"Question:\n{question}\n")
 
         result = agent.run(
@@ -845,24 +879,456 @@ def run_agent(
     if result.sources:
         print("Sources:\n")
         for idx, src in enumerate(result.sources, start=1):
-            print(f"{idx}. {src.get('file_path')}")
-            sym = src.get('symbol_name')
-            if sym and sym != "file" and sym != src.get('file_path'):
-                parent = src.get('parent_symbol')
-                if parent:
-                    print(f"   {parent}.{sym}()")
-                else:
-                    print(f"   {sym}()")
-            if "start_line" in src and "end_line" in src:
-                print(f"   Lines: {src.get('start_line')}-{src.get('end_line')}")
-            if "score" in src:
-                print(f"   Score: {src.get('score'):.4f}")
+            if src.get("source_type") == "git" or "commit_hash" in src:
+                c_hash = src.get("short_hash") or (src.get("commit_hash", "")[:7] if src.get("commit_hash") else "")
+                print(f"{idx}. [Git Source] Commit {c_hash}")
+                if "author" in src and src["author"]:
+                    print(f"   Author: {src['author']}")
+                if "date" in src and src["date"]:
+                    print(f"   Date:   {src['date']}")
+                if "file_path" in src and src["file_path"]:
+                    print(f"   File:   {src['file_path']}")
+                if "message" in src and src["message"]:
+                    print(f"   Message: {src['message']}")
+            elif src.get("source_type") == "graph":
+                print(f"{idx}. [Graph Source] {src.get('symbol_name') or src.get('file_path')}")
+                if "file_path" in src and src["file_path"]:
+                    print(f"   File:     {src['file_path']}")
+                if "start_line" in src and "end_line" in src and src["start_line"] > 0:
+                    print(f"   Lines:    {src['start_line']}-{src['end_line']}")
+                elif "start_line" in src and src["start_line"] > 0:
+                    print(f"   Line:     {src['start_line']}")
+                if "relationship" in src and src["relationship"]:
+                    print(f"   Relation: {src['relationship']}")
+            else:
+                print(f"{idx}. [Code Source] {src.get('file_path')}")
+                sym = src.get('symbol_name')
+                if sym and sym != "file" and sym != src.get('file_path'):
+                    parent = src.get('parent_symbol')
+                    if parent:
+                        print(f"   {parent}.{sym}()")
+                    else:
+                        print(f"   {sym}()")
+                if "start_line" in src and "end_line" in src:
+                    print(f"   Lines: {src.get('start_line')}-{src.get('end_line')}")
+                if "score" in src:
+                    print(f"   Score: {src.get('score'):.4f}")
             print()
 
     total_time = result.timing.get("total", 0.0)
     print(f"Agent iterations: {result.iterations}")
     print(f"Tool calls: {len(result.tool_calls)}")
     print(f"Total time: {total_time:.2f}s")
+
+
+def run_git_log(limit: int = 10, project_dir: str = ".", as_json: bool = False):
+    """Executes git-log command showing recent repository commits."""
+    root_path = Path(project_dir).resolve()
+    try:
+        repo = get_repository(root_path)
+        commits = get_recent_commits(repo=repo, limit=limit)
+        if as_json:
+            print(json.dumps([c.to_dict() for c in commits], indent=2))
+            return
+
+        print(f"Recent Commits ({len(commits)}):\n")
+        if not commits:
+            print("No commits found in repository.")
+            return
+
+        for c in commits:
+            print(f"Commit:  {c.short_hash} ({c.commit_hash})")
+            print(f"Author:  {c.author_name} <{c.author_email}>")
+            print(f"Date:    {c.date}")
+            if c.files_changed:
+                print(f"Files:   {', '.join(c.files_changed)}")
+            print(f"Message: {c.message}\n")
+    except (NotAGitRepositoryError, GitSecurityError, GitError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_git_history(file_path: str, limit: int = 10, project_dir: str = ".", as_json: bool = False):
+    """Executes git-history command showing commit history for a file."""
+    root_path = Path(project_dir).resolve()
+    try:
+        repo = get_repository(root_path)
+        history = get_file_history(repo=repo, file_path=file_path, limit=limit)
+        if as_json:
+            print(json.dumps(history.to_dict(), indent=2))
+            return
+
+        print(f"Commit History: {history.file_path} ({len(history.commits)} commits)\n")
+        if not history.commits:
+            print("No commits found affecting this file.")
+            return
+
+        for c in history.commits:
+            print(f"Commit:  {c.short_hash}")
+            print(f"Author:  {c.author_name}")
+            print(f"Date:    {c.date}")
+            print(f"Message: {c.message}\n")
+    except (NotAGitRepositoryError, GitSecurityError, GitFileNotFoundError, GitError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_git_last_change(file_path: str, project_dir: str = ".", as_json: bool = False):
+    """Executes git-last-change command showing the most recent commit affecting a file."""
+    root_path = Path(project_dir).resolve()
+    try:
+        repo = get_repository(root_path)
+        commit = get_last_commit_for_file(repo=repo, file_path=file_path)
+        if as_json:
+            print(json.dumps(commit.to_dict() if commit else None, indent=2))
+            return
+
+        if not commit:
+            print(f"No commit history found for file: {file_path}")
+            return
+
+        print(f"Last Change: {file_path}\n")
+        print(f"Commit:  {commit.short_hash} ({commit.commit_hash})")
+        print(f"Author:  {commit.author_name} <{commit.author_email}>")
+        print(f"Date:    {commit.date}")
+        print(f"Message: {commit.message}")
+        if commit.files_changed:
+            print("Files Changed:")
+            for f in commit.files_changed:
+                print(f"  - {f}")
+    except (NotAGitRepositoryError, GitSecurityError, GitFileNotFoundError, GitError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_git_show(commit_hash: str, project_dir: str = ".", as_json: bool = False):
+    """Executes git-show command showing commit metadata and diff."""
+    root_path = Path(project_dir).resolve()
+    try:
+        repo = get_repository(root_path)
+        detail = get_commit_detail(repo=repo, commit_hash=commit_hash)
+        if as_json:
+            print(json.dumps(detail.to_dict(), indent=2))
+            return
+
+        print(f"Commit:  {detail.commit_hash} [{detail.short_hash}]")
+        print(f"Author:  {detail.author_name} <{detail.author_email}>")
+        print(f"Date:    {detail.date}")
+        print(f"Message:\n  {detail.message}\n")
+        print(f"Changes: Files: {len(detail.files_changed)} (+{detail.additions}, -{detail.deletions})\n")
+        if detail.diff_summary:
+            print("Diff:")
+            print(detail.diff_summary)
+    except (NotAGitRepositoryError, GitSecurityError, GitCommitNotFoundError, GitError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_git_blame(
+    file_path: str,
+    start_line: Optional[int] = None,
+    end_line: Optional[int] = None,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """Executes git-blame command showing line-by-line commit authorship."""
+    root_path = Path(project_dir).resolve()
+    try:
+        repo = get_repository(root_path)
+        blame_res = get_file_blame(
+            repo=repo,
+            file_path=file_path,
+            start_line=start_line,
+            end_line=end_line,
+        )
+        if as_json:
+            print(json.dumps(blame_res.to_dict(), indent=2))
+            return
+
+        range_str = f"Lines {blame_res.start_line or 1}-{blame_res.end_line or blame_res.lines[-1].line_number if blame_res.lines else 0}"
+        print(f"Blame: {blame_res.file_path} ({range_str})\n")
+        for line in blame_res.lines:
+            print(f"{line.line_number:<4} | {line.short_hash} | {line.author:<15} | {line.date[:10]} | {line.content}")
+    except (NotAGitRepositoryError, GitSecurityError, GitFileNotFoundError, GitBlameError, GitError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _load_or_build_graph(graph_path: Optional[str] = None, project_dir: str = ".") -> GraphStore:
+    """Helper to load a stored graph or build from directory."""
+    root = Path(project_dir).resolve()
+    target_path = Path(graph_path).resolve() if graph_path else root / "data" / "graph.json"
+    if target_path.is_file():
+        try:
+            return GraphStore.load(target_path)
+        except Exception:
+            pass
+    return GraphBuilder().build(root)
+
+
+def run_graph_build(directory: str = ".", output_path: str = "data/graph.json"):
+    """Builds and serializes a code dependency graph for a directory."""
+    root = Path(directory).resolve()
+    out = Path(output_path).resolve()
+    try:
+        builder = GraphBuilder()
+        graph = builder.build(root)
+        graph.save(out)
+
+        nodes = graph.get_nodes()
+        edges = graph.get_edges()
+
+        classes_cnt = len([n for n in nodes if n.node_type == NodeType.CLASS])
+        funcs_cnt = len([n for n in nodes if n.node_type == NodeType.FUNCTION])
+        methods_cnt = len([n for n in nodes if n.node_type == NodeType.METHOD])
+        files_cnt = len([n for n in nodes if n.node_type == NodeType.FILE])
+        modules_cnt = len([n for n in nodes if n.node_type == NodeType.MODULE])
+
+        calls_cnt = len([e for e in edges if e.edge_type == EdgeType.CALLS])
+        imports_cnt = len([e for e in edges if e.edge_type == EdgeType.IMPORTS])
+        contains_cnt = len([e for e in edges if e.edge_type == EdgeType.CONTAINS])
+        defines_cnt = len([e for e in edges if e.edge_type == EdgeType.DEFINES])
+
+        print(f"DevPilot v1.0 - Code Dependency Graph Built\n")
+        print(f"Target Directory: {root.name}")
+        print(f"Output File:      {out}\n")
+        print(f"Nodes ({len(nodes)}):")
+        print(f"  - Files:     {files_cnt}")
+        print(f"  - Classes:   {classes_cnt}")
+        print(f"  - Functions: {funcs_cnt}")
+        print(f"  - Methods:   {methods_cnt}")
+        print(f"  - Modules:   {modules_cnt}\n")
+        print(f"Edges ({len(edges)}):")
+        print(f"  - CALLS:     {calls_cnt}")
+        print(f"  - IMPORTS:   {imports_cnt}")
+        print(f"  - CONTAINS:  {contains_cnt}")
+        print(f"  - DEFINES:   {defines_cnt}")
+    except Exception as e:
+        print(f"Error building graph: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_graph_info(graph_path: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Displays summary statistics of the dependency graph."""
+    try:
+        graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
+        nodes = graph.get_nodes()
+        edges = graph.get_edges()
+
+        stats = {
+            "total_nodes": len(nodes),
+            "files": len([n for n in nodes if n.node_type == NodeType.FILE]),
+            "classes": len([n for n in nodes if n.node_type == NodeType.CLASS]),
+            "functions": len([n for n in nodes if n.node_type == NodeType.FUNCTION]),
+            "methods": len([n for n in nodes if n.node_type == NodeType.METHOD]),
+            "modules": len([n for n in nodes if n.node_type == NodeType.MODULE]),
+            "total_edges": len(edges),
+            "calls": len([e for e in edges if e.edge_type == EdgeType.CALLS]),
+            "imports": len([e for e in edges if e.edge_type == EdgeType.IMPORTS]),
+            "contains": len([e for e in edges if e.edge_type == EdgeType.CONTAINS]),
+            "defines": len([e for e in edges if e.edge_type == EdgeType.DEFINES]),
+            "belongs_to": len([e for e in edges if e.edge_type == EdgeType.BELONGS_TO]),
+        }
+
+        if as_json:
+            print(json.dumps(stats, indent=2))
+            return
+
+        print("DevPilot v1.0 - Code Dependency Graph Info\n")
+        print(f"Nodes: {stats['total_nodes']}")
+        print(f"  - Files:     {stats['files']}")
+        print(f"  - Classes:   {stats['classes']}")
+        print(f"  - Functions: {stats['functions']}")
+        print(f"  - Methods:   {stats['methods']}")
+        print(f"  - Modules:   {stats['modules']}\n")
+        print(f"Edges: {stats['total_edges']}")
+        print(f"  - CALLS:      {stats['calls']}")
+        print(f"  - IMPORTS:    {stats['imports']}")
+        print(f"  - CONTAINS:   {stats['contains']}")
+        print(f"  - DEFINES:    {stats['defines']}")
+        print(f"  - BELONGS_TO: {stats['belongs_to']}")
+    except Exception as e:
+        print(f"Error inspecting graph: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_graph_callers(symbol: str, graph_path: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Finds functions/methods calling a symbol."""
+    try:
+        graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
+        callers = get_callers(graph, symbol=symbol)
+
+        if as_json:
+            print(json.dumps({"symbol": symbol, "callers": callers}, indent=2))
+            return
+
+        print("DevPilot v1.0 - Code Dependency Graph\n")
+        print(f"Symbol:\n{symbol}\n")
+        if not callers:
+            print(f"No direct callers found for '{symbol}'.")
+            return
+
+        print("Callers:\n")
+        for idx, c in enumerate(callers, start=1):
+            line_str = f":{c['start_line']}" if c.get("start_line") else ""
+            call_l = f" (call at line {c['call_line']})" if c.get("call_line") else ""
+            print(f"{idx}. {c['name']}")
+            print(f"   {c['file_path']}{line_str}{call_l}\n")
+    except Exception as e:
+        print(f"Error querying callers: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_graph_callees(symbol: str, graph_path: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Finds functions/methods called by a symbol."""
+    try:
+        graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
+        callees = get_callees(graph, symbol=symbol)
+
+        if as_json:
+            print(json.dumps({"symbol": symbol, "callees": callees}, indent=2))
+            return
+
+        print("DevPilot v1.0 - Code Dependency Graph\n")
+        print(f"Symbol:\n{symbol}\n")
+        if not callees:
+            print(f"No outgoing calls found from '{symbol}'.")
+            return
+
+        print("Calls:\n")
+        for idx, c in enumerate(callees, start=1):
+            line_str = f":{c['start_line']}" if c.get("start_line") else ""
+            call_l = f" (call at line {c['call_line']})" if c.get("call_line") else ""
+            print(f"{idx}. {c['name']}")
+            print(f"   {c['file_path']}{line_str}{call_l}\n")
+    except Exception as e:
+        print(f"Error querying callees: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_graph_dependencies(symbol: str, depth: int = 1, graph_path: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Traverses downstream call dependencies for a symbol."""
+    try:
+        graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
+        dep_result = get_dependencies(graph, symbol=symbol, depth=depth)
+
+        if as_json:
+            print(json.dumps(dep_result, indent=2))
+            return
+
+        print("DevPilot v1.0 - Code Dependency Graph (Dependencies)\n")
+        print(f"Symbol: {dep_result['symbol']} (Depth: {dep_result['depth']})")
+        print(f"Total Dependencies: {dep_result['total_dependencies']}\n")
+
+        if not dep_result["dependencies"]:
+            print(f"No downstream call dependencies found for '{symbol}'.")
+            return
+
+        for idx, d in enumerate(dep_result["dependencies"], start=1):
+            line_str = f":{d['start_line']}" if d.get("start_line") else ""
+            print(f"{idx}. {d['name']} (Depth {d['depth']})")
+            print(f"   {d['file_path']}{line_str}")
+            print(f"   Path: {d['call_path']}\n")
+    except Exception as e:
+        print(f"Error querying dependencies: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_graph_impact(symbol: str, depth: int = 2, graph_path: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Performs static impact analysis for a symbol."""
+    try:
+        graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
+        impact = get_impact(graph, symbol=symbol, depth=depth)
+
+        if as_json:
+            print(json.dumps(impact, indent=2))
+            return
+
+        print("DevPilot v1.0 - Static Dependency Impact Analysis\n")
+        print(f"Target Symbol: {impact['symbol']} (Depth: {impact['depth']})")
+        print(f"Total Affected Callers: {impact['total_impacted']}\n")
+
+        if impact["direct_callers"]:
+            print(f"Direct Callers ({len(impact['direct_callers'])}):")
+            for c in impact["direct_callers"]:
+                print(f"  - {c['name']} ({c['file_path']}:{c.get('start_line', 0)})")
+            print()
+
+        if impact["indirect_callers"]:
+            print(f"Indirect Callers ({len(impact['indirect_callers'])}):")
+            for c in impact["indirect_callers"]:
+                print(f"  - {c['name']} ({c['file_path']}:{c.get('start_line', 0)}) [Depth {c['depth']}]")
+            print()
+
+        if impact["impacted_files"]:
+            print("Impacted Files:")
+            for f in impact["impacted_files"]:
+                print(f"  - {f}")
+            print()
+        elif not impact["direct_callers"] and not impact["indirect_callers"]:
+            print(f"No callers found affected by changes to '{symbol}'.")
+    except Exception as e:
+        print(f"Error analyzing impact: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_graph_file_dependencies(file_path: str, graph_path: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Displays import dependencies for a file."""
+    try:
+        graph = _load_or_build_graph(graph_path=graph_path, project_dir=project_dir)
+        file_deps = get_file_dependencies(graph, file_path=file_path)
+
+        if as_json:
+            print(json.dumps(file_deps, indent=2))
+            return
+
+        if "error" in file_deps:
+            print(f"DevPilot v1.0 - File Dependencies: {file_path}\n")
+            print(file_deps["error"])
+            return
+
+        print(f"DevPilot v1.0 - File Dependencies: {file_deps['file_path']}\n")
+        if file_deps["imports_files"]:
+            print(f"Imports Files ({len(file_deps['imports_files'])}):")
+            for f in file_deps["imports_files"]:
+                print(f"  - {f}")
+            print()
+
+        if file_deps["imports_modules"]:
+            print(f"Imports Modules ({len(file_deps['imports_modules'])}):")
+            for m in file_deps["imports_modules"]:
+                print(f"  - {m}")
+            print()
+
+        if file_deps["imported_by"]:
+            print(f"Imported By ({len(file_deps['imported_by'])}):")
+            for f in file_deps["imported_by"]:
+                print(f"  - {f}")
+            print()
+
+        if file_deps["defined_symbols"]:
+            print(f"Defined Symbols ({len(file_deps['defined_symbols'])}):")
+            for s in file_deps["defined_symbols"]:
+                print(f"  - {s['node_type']}: {s['name']} (Lines {s['start_line']}-{s['end_line']})")
+            print()
+    except Exception as e:
+        print(f"Error querying file dependencies: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main():
@@ -882,13 +1348,25 @@ def main():
         "search",
         "ask",
         "agent",
+        "git-log",
+        "git-history",
+        "git-last-change",
+        "git-show",
+        "git-blame",
+        "graph-build",
+        "graph-info",
+        "graph-callers",
+        "graph-callees",
+        "graph-dependencies",
+        "graph-impact",
+        "graph-file-dependencies",
         "-h",
         "--help",
     ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v0.8 - Code Intelligence and Tool-Using AI Agent")
+    parser = argparse.ArgumentParser(description="DevPilot v1.0 - Code Intelligence, Git Intelligence, Graph Dependencies, and AI Agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -977,6 +1455,87 @@ def main():
     agent_parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION_NAME, help="Qdrant collection name")
     agent_parser.add_argument("--storage", type=str, default=DEFAULT_STORAGE_PATH, help="Path to local Qdrant storage folder")
 
+    # git-log subcommand (v0.9)
+    git_log_parser = subparsers.add_parser("git-log", help="Display recent Git commits in the repository")
+    git_log_parser.add_argument("--limit", type=int, default=10, help="Maximum number of commits to show (default: 10)")
+    git_log_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    git_log_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # git-history subcommand (v0.9)
+    git_history_parser = subparsers.add_parser("git-history", help="Display commit history affecting a specific file")
+    git_history_parser.add_argument("file_path", type=str, help="Path to the file")
+    git_history_parser.add_argument("--limit", type=int, default=10, help="Maximum number of commits to show (default: 10)")
+    git_history_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    git_history_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # git-last-change subcommand (v0.9)
+    git_last_parser = subparsers.add_parser("git-last-change", help="Display the most recent commit affecting a file")
+    git_last_parser.add_argument("file_path", type=str, help="Path to the file")
+    git_last_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    git_last_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # git-show subcommand (v0.9)
+    git_show_parser = subparsers.add_parser("git-show", help="Display commit details, statistics, and diff summary")
+    git_show_parser.add_argument("commit_hash", type=str, help="Commit hash or revision (e.g. HEAD, sha)")
+    git_show_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    git_show_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # git-blame subcommand (v0.9)
+    git_blame_parser = subparsers.add_parser("git-blame", help="Display line-by-line Git blame analysis")
+    git_blame_parser.add_argument("file_path", type=str, help="Path to the file")
+    git_blame_parser.add_argument("--start-line", type=int, default=None, help="Starting line number (1-indexed)")
+    git_blame_parser.add_argument("--end-line", type=int, default=None, help="Ending line number (1-indexed)")
+    git_blame_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    git_blame_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # graph-build subcommand (v1.0)
+    graph_build_parser = subparsers.add_parser("graph-build", help="Build code dependency graph for a directory")
+    graph_build_parser.add_argument("directory", type=str, nargs="?", default=".", help="Project directory to build graph for (default: .)")
+    graph_build_parser.add_argument("--output", type=str, default="data/graph.json", help="Path to save output graph JSON (default: data/graph.json)")
+
+    # graph-info subcommand (v1.0)
+    graph_info_parser = subparsers.add_parser("graph-info", help="Display dependency graph summary statistics")
+    graph_info_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
+    graph_info_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
+    graph_info_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # graph-callers subcommand (v1.0)
+    graph_callers_parser = subparsers.add_parser("graph-callers", help="Find functions/methods calling a symbol")
+    graph_callers_parser.add_argument("symbol", type=str, help="Symbol name or ID to find callers for")
+    graph_callers_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
+    graph_callers_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
+    graph_callers_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # graph-callees subcommand (v1.0)
+    graph_callees_parser = subparsers.add_parser("graph-callees", help="Find functions/methods called by a symbol")
+    graph_callees_parser.add_argument("symbol", type=str, help="Symbol name or ID to find outgoing calls from")
+    graph_callees_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
+    graph_callees_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
+    graph_callees_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # graph-dependencies subcommand (v1.0)
+    graph_dep_parser = subparsers.add_parser("graph-dependencies", help="Traverse downstream call dependencies for a symbol")
+    graph_dep_parser.add_argument("symbol", type=str, help="Symbol name or ID to traverse dependencies from")
+    graph_dep_parser.add_argument("--depth", type=int, default=1, help="Maximum traversal depth (default: 1)")
+    graph_dep_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
+    graph_dep_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
+    graph_dep_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # graph-impact subcommand (v1.0)
+    graph_impact_parser = subparsers.add_parser("graph-impact", help="Perform static dependency impact analysis for a symbol")
+    graph_impact_parser.add_argument("symbol", type=str, help="Symbol name or ID to evaluate impact for")
+    graph_impact_parser.add_argument("--depth", type=int, default=2, help="Maximum upstream depth (default: 2)")
+    graph_impact_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
+    graph_impact_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
+    graph_impact_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # graph-file-dependencies subcommand (v1.0)
+    graph_file_dep_parser = subparsers.add_parser("graph-file-dependencies", help="Display import dependencies for a file")
+    graph_file_dep_parser.add_argument("file_path", type=str, help="Path to the file to inspect")
+    graph_file_dep_parser.add_argument("--graph", type=str, default=None, help="Path to graph JSON file (default: data/graph.json)")
+    graph_file_dep_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
+    graph_file_dep_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -1035,6 +1594,87 @@ def main():
             collection_name=args.collection,
             provider_name=args.provider,
             model_name=args.model,
+        )
+    elif args.command == "git-log":
+        run_git_log(
+            limit=args.limit,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "git-history":
+        run_git_history(
+            file_path=args.file_path,
+            limit=args.limit,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "git-last-change":
+        run_git_last_change(
+            file_path=args.file_path,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "git-show":
+        run_git_show(
+            commit_hash=args.commit_hash,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "git-blame":
+        run_git_blame(
+            file_path=args.file_path,
+            start_line=args.start_line,
+            end_line=args.end_line,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "graph-build":
+        run_graph_build(
+            directory=args.directory,
+            output_path=args.output,
+        )
+    elif args.command == "graph-info":
+        run_graph_info(
+            graph_path=args.graph,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "graph-callers":
+        run_graph_callers(
+            symbol=args.symbol,
+            graph_path=args.graph,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "graph-callees":
+        run_graph_callees(
+            symbol=args.symbol,
+            graph_path=args.graph,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "graph-dependencies":
+        run_graph_dependencies(
+            symbol=args.symbol,
+            depth=args.depth,
+            graph_path=args.graph,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "graph-impact":
+        run_graph_impact(
+            symbol=args.symbol,
+            depth=args.depth,
+            graph_path=args.graph,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "graph-file-dependencies":
+        run_graph_file_dependencies(
+            file_path=args.file_path,
+            graph_path=args.graph,
+            project_dir=args.project_dir,
+            as_json=args.json,
         )
 
 

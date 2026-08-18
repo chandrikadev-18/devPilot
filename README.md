@@ -74,14 +74,56 @@ Final Grounded Answer + Separate Source Citations
   - **LLM**: A static text generation model that takes input and returns a completion in one step.
   - **Agent**: An orchestration system wrapped around an LLM that maintains conversational state, calls external tools, inspects tool outputs, and loops iteratively until sufficient evidence is gathered.
 * **What is a Tool?**: A strictly typed, callable Python function registered in the `ToolRegistry` with a validated JSON Schema input specification.
-* **Available Read-Only Tools**:
+* **Available Read-Only Code Tools**:
   1. `search_code`: Executes semantic similarity search across indexed code vectors (reuses v0.6).
   2. `read_file`: Reads text contents of a project file with security sandbox checks and truncation limits.
   3. `find_symbol`: Locates specific function, class, or method definitions across indexed metadata or AST.
   4. `get_file_structure`: Extracts AST overview (classes, functions, methods, imports) of a file without executing code.
-* **Why Tools are Read-Only**: Security and safety guarantee. DevPilot v0.8 cannot modify project files, execute code, run shell commands, access secrets, or make destructive changes.
+* **Why Tools are Read-Only**: Security and safety guarantee. DevPilot cannot modify project files, execute code, run shell commands, access secrets, or make destructive changes.
 * **Strict Path & Secret Security**: Path resolution strictly prevents directory traversal (`../`), blocks access to `.env` or `.git/` files, and confines file access to the designated project root.
 * **Bounded Execution Limits**: Runaway loops are prevented with `MAX_AGENT_ITERATIONS` (default: 5) and `MAX_TOOL_CALLS` (default: 10), plus `MAX_TOOL_RESULT_CHARACTERS` (default: 12000).
+
+### DevPilot v0.9 — Git Intelligence
+* **Read-Only Git History Analysis**: Inspects repository commits, file modification histories, line-by-line authorship (blame), and patch diffs without altering repository state.
+* **Commit Metadata**: Extracts commit SHA hashes (full and short), author name, email, commit timestamp (UTC), commit message, and changed file list.
+* **File History & Evolution**: Traces when files were created or modified and lists historical commits affecting target files.
+* **Line Blame Analysis**: Inspects exact line-level commit attribution with optional line range bounding (`--start-line`, `--end-line`).
+* **Bounded Diff Inspection**: Safely inspects commit patch diffs with additions/deletions statistics and automatic truncation at `MAX_DIFF_CHARACTERS` (12,000 chars) marked with `[diff truncated]`.
+* **Read-Only Git Tools for AI Agent**:
+  1. `get_file_history`: Retrieves recent Git commits modifying a specific file.
+  2. `get_recent_commits`: Retrieves recent Git commits across the repository.
+  3. `get_last_commit`: Retrieves the most recent Git commit that modified a file.
+  4. `get_commit`: Retrieves metadata and limited diff for a specific commit hash.
+  5. `get_file_blame`: Shows commit and author attribution for specific lines.
+* **Combined Code + Git Analysis**: The AI agent seamlessly combines semantic code search, AST symbol inspection, and Git history tools to answer questions such as:
+  - "When was this function last changed?"
+  - "Who changed this file?"
+  - "What changed recently in auth.py?"
+  - "Why was this function changed?" (grounded in commit messages and diff evidence)
+* **Separate Source Citations**: Distinguishes Code Sources (`[Code Source]` file paths, symbols, line ranges) and Git Sources (`[Git Source]` commit hashes, authors, dates, messages).
+* **Git Safety & Sandbox Guardrails**:
+  - Strictly forbidden: `git commit`, `git push`, `git pull`, `git checkout`, `git reset`, `git merge`, `git rebase`, or branch creation.
+  - Path traversal (`../`) and external repository access outside project directory are strictly blocked.
+
+```text
+Git Intelligence Architecture:
+
+      User Question
+           ↓
+         Agent
+           ↓
+  Code Search / Git Tools
+  (search_code, find_symbol, read_file,
+   get_file_history, get_commit, get_file_blame)
+           ↓
+      Tool Results
+  (Code Chunks + Commit Metadata + Diffs)
+           ↓
+          LLM
+  (Evidence-Based Grounded Synthesis)
+           ↓
+  Grounded Answer + Citations
+```
 
 ---
 
@@ -127,6 +169,7 @@ Run DevPilot using `app.main` as a module.
 ```bash
 python -m app.main --help
 python -m app.main agent --help
+python -m app.main git-log --help
 ```
 
 ### 1. Scan Directory (v0.1)
@@ -154,6 +197,68 @@ python -m app.main embed .
 python -m app.main store sample_project/
 ```
 
+### DevPilot v1.0 — Code Dependency & Relationship Graph
+* **Static Code Dependency Graph**: Builds an in-memory directed graph of code entities and relationships extracted via Tree-sitter AST analysis.
+* **Deterministic Node IDs**:
+  - Files: `file:<file_path>` (e.g. `file:backend/auth.py`)
+  - Classes: `class:<file_path>:<class_name>` (e.g. `class:backend/auth.py:AuthService`)
+  - Functions: `function:<file_path>:<func_name>` (e.g. `function:backend/auth.py:login_user`)
+  - Methods: `method:<file_path>:<class_name>.<method_name>` (e.g. `method:backend/auth.py:AuthService.login`)
+  - Modules: `module:<module_name>` (e.g. `module:hashlib`)
+* **Entity Relationships**:
+  - `FILE -(CONTAINS)-> CLASS`
+  - `FILE -(DEFINES)-> FUNCTION`
+  - `CLASS -(CONTAINS)-> METHOD`
+  - `METHOD -(BELONGS_TO)-> CLASS`
+  - `FILE -(IMPORTS)-> FILE` / `MODULE`
+  - `CALLER -(CALLS)-> CALLEE`
+* **Deterministic Name Resolution**:
+  1. Same class method (`self.method()` or method in current class)
+  2. Same file top-level function
+  3. Imported symbol (from `import` or `from ... import` statements)
+  4. Unique matching project symbol
+  5. Unresolved calls omit edges (no fake/hallucinated nodes).
+* **Graph Query Engine & Impact Analysis**:
+  - `get_callers`: Functions/methods calling a symbol.
+  - `get_callees`: Functions/methods called by a symbol.
+  - `get_dependencies`: Downstream multi-depth traversal with cycle prevention.
+  - `get_impact`: Static impact analysis discovering all direct and indirect callers affected if a symbol is modified.
+  - `get_file_dependencies`: File-level import dependencies and defined symbols.
+* **Read-Only Graph Tools for AI Agent**:
+  - `get_callers`, `get_callees`, `get_dependencies`, `get_impact`, `get_file_dependencies`.
+* **Static Analysis Disclaimer**:
+  - Dependency and call relationships are determined via static AST analysis without runtime execution. Dynamic dispatch, runtime reflection (`getattr`), or dynamic monkey-patching are not evaluated.
+
+---
+
+## CLI Usage
+
+### 1. Project Scanner (v0.1)
+```bash
+python -m app.main scan .
+```
+
+### 2. Tree-sitter Python Parser (v0.2)
+```bash
+python -m app.main parse sample_project/auth.py
+```
+
+### 3. Code Chunking & Indexing (v0.3)
+```bash
+python -m app.main index sample_project/
+```
+
+### 4. Local Code Embeddings (v0.4)
+```bash
+python -m app.main embed sample_project/ --output data/embeddings/index.json
+```
+
+### 5. Qdrant Vector Storage (v0.5)
+```bash
+python -m app.main store sample_project/
+python -m app.main store-info
+```
+
 ### 6. Semantic Code Search (v0.6)
 ```bash
 python -m app.main search "where is user authentication handled?"
@@ -164,77 +269,116 @@ python -m app.main search "where is user authentication handled?"
 python -m app.main ask "Where is user authentication handled?"
 ```
 
-### 8. Tool-Using AI Agent (v0.8)
-Ask complex questions and let the agent dynamically inspect the codebase:
+### 8. Git History & Intelligence (v0.9)
 
+#### Show Recent Commits:
 ```bash
-python -m app.main agent "Where is authentication handled and what functions are in that file?"
+python -m app.main git-log --limit 5
 ```
 
-Example human-readable output:
-```text
-DevPilot v0.8 - Codebase Agent
-
-Question:
-Where is authentication handled and what functions are in that file?
-
-Agent:
-
-Tool:
-search_code
-
-Query:
-authentication handling
-
-Results:
-sample_project/auth.py
-AuthService()
-
-Tool:
-get_file_structure
-
-File:
-sample_project/auth.py
-
-Results:
-sample_project/auth.py
-AuthService()
-
-Final Answer:
-
-Authentication is handled in `sample_project/auth.py` within the `AuthService` class.
-
-The file contains the following components:
-- Class `AuthService`:
-  - `__init__()` (lines 5-6)
-  - `hash_password()` (lines 8-9)
-  - `verify_password()` (lines 11-12)
-- Function `login_user()` (lines 14-15)
-
-Sources:
-
-1. sample_project/auth.py
-   AuthService()
-   Lines: 4-12
-   Score: 0.7420
-
-2. sample_project/auth.py
-   login_user()
-   Lines: 14-15
-
-Agent iterations: 2
-Tool calls: 2
-Total time: 1.65s
+#### Show Commit History for a File:
+```bash
+python -m app.main git-history app/config.py
 ```
 
-#### Verbose Debug Mode:
+#### Show Last Change for a File:
 ```bash
-python -m app.main agent "How does login work?" --debug
+python -m app.main git-last-change app/config.py
+```
+
+#### Show Commit Details & Diff:
+```bash
+python -m app.main git-show HEAD
+```
+
+#### Show File Blame:
+```bash
+python -m app.main git-blame app/config.py --start-line 1 --end-line 25
+```
+
+### 9. Code Dependency Graph (v1.0)
+
+#### Build Dependency Graph:
+```bash
+python -m app.main graph-build sample_project/ --output data/graph.json
+```
+
+#### Inspect Graph Statistics:
+```bash
+python -m app.main graph-info
+```
+
+#### Find Callers of a Function/Method:
+```bash
+python -m app.main graph-callers hash_password
+```
+
+#### Find Outgoing Calls from a Function/Method:
+```bash
+python -m app.main graph-callees verify_password
+```
+
+#### Downstream Dependency Traversal:
+```bash
+python -m app.main graph-dependencies login_user --depth 2
+```
+
+#### Static Impact Analysis:
+```bash
+python -m app.main graph-impact hash_password --depth 2
+```
+
+#### Inspect File Import Relationships:
+```bash
+python -m app.main graph-file-dependencies sample_project/auth.py
 ```
 
 #### JSON Output Mode:
 ```bash
-python -m app.main agent "Where is authentication handled?" --json
+python -m app.main graph-info --json
+python -m app.main graph-impact hash_password --json
+```
+
+### 10. Autonomous Codebase, Git & Graph AI Agent (v0.8 - v1.0)
+Ask complex questions combining semantic search, Git history, and dependency graph relationships:
+
+```bash
+python -m app.main agent "What functions call hash_password and what could break if I change it?"
+```
+
+Example human-readable output:
+```text
+DevPilot v1.0 - Autonomous Codebase Agent
+
+Question:
+What functions call hash_password and what could break if I change it?
+
+Final Answer:
+
+Based on the static code dependency graph:
+1. `hash_password` is directly called by `verify_password` in `sample_project/auth.py` at line 12.
+2. If `hash_password` is modified, the direct impact is `verify_password`. Any callers of `verify_password` (such as authentication handlers) may also be impacted.
+
+Sources:
+
+1. [Graph Source] verify_password
+   File:     auth.py
+   Lines:    11-12
+   Relation: CALLER
+
+Agent iterations: 2
+Tool calls: 2
+Total time: 1.62s
+```
+
+#### Verbose Debug Mode:
+```bash
+python -m app.main agent "What are the dependencies of auth.py?" --debug
+```
+
+#### JSON Output Mode:
+```bash
+python -m app.main agent "Show callers of hash_password" --json
 ```
 
 ---
@@ -247,23 +391,20 @@ Run all unit and mock integration tests using `pytest` without requiring an API 
 python -m pytest tests/
 ```
 
-### Running Opt-In Real LLM Tests:
-```bash
-RUN_LLM_INTEGRATION_TESTS=1 LLM_API_KEY=your_key pytest tests/test_rag.py -k test_real_groq_provider_live
-```
-
 ---
 
 ## Scope & Roadmap
 
-| Feature Area | Status in v0.8 | Roadmap |
+| Feature Area | Status in v1.0 | Roadmap |
 | :--- | :--- | :--- |
 | **Project Scanner & Tree-sitter Parser** | Completed (v0.1 - v0.2) | Maintained |
 | **Code Chunking & Local Embeddings** | Completed (v0.3 - v0.4) | Maintained |
 | **Qdrant Vector Store & Semantic Search** | Completed (v0.5 - v0.6) | Maintained |
 | **RAG & Single-Turn Codebase Q&A** | Completed (v0.7) | Maintained |
-| **Read-Only Tool-Using AI Agent** | **Completed (v0.8)** | Maintained |
+| **Read-Only Tool-Using AI Agent** | Completed (v0.8) | Maintained |
+| **Read-Only Git Intelligence & History** | Completed (v0.9) | Maintained |
+| **Code Dependency & Relationship Graph** | **Completed (v1.0)** | Maintained |
+| **External Graph DB (Neo4j)** | Out of Scope for v1.0 | Future version |
 | **Code Modification & File Editing** | Out of Scope | Future version |
-| **Code Execution & Shell Commands** | Out of Scope | Future version |
-| **VS Code Extension & React UI** | Out of Scope | Future version |
+| **Code Execution & Shell Commands** | Out of Scope | Strictly Forbidden |
 | **Multi-Agent Systems** | Out of Scope | Future version |
