@@ -134,7 +134,7 @@ def test_agent_max_iterations_limit(mock_tools):
     """Verifies agent halts and synthesizes answer when hitting max_iterations limit."""
     # LLM that always requests tools
     infinite_tool_responses = [
-        LLMChatResponse(tool_calls=[ToolCall(id=f"call_{i}", name="search_code", arguments={"query": "test"})])
+        LLMChatResponse(tool_calls=[ToolCall(id=f"call_{i}", name="search_code", arguments={"query": f"test_{i}"})])
         for i in range(10)
     ]
     mock_llm = MockAgentLLM(infinite_tool_responses)

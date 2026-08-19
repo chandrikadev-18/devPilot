@@ -14,6 +14,7 @@ from app.agent.tool_registry import ToolRegistry
 from app.config import (
     get_max_agent_iterations,
     get_max_tool_calls,
+    get_max_tool_result_characters,
 )
 from app.llm.base import LLMProvider
 
@@ -31,26 +32,32 @@ Available tools include:
 - get_last_commit: retrieve the most recent Git commit modifying a specific file
 - get_commit: retrieve detailed metadata and limited diff for a specific commit
 - get_file_blame: inspect line-by-line blame, author, commit, and date information
-- get_callers: find functions/methods that directly call a specific symbol
-- get_callees: find functions/methods called directly by a specific symbol
-- get_dependencies: multi-step downstream call dependency traversal for a symbol
-- get_impact: static impact analysis discovering all callers affected if a symbol changes
-- get_file_dependencies: inspect module and file import relationships
+- get_callers: find functions/methods that directly call a specific symbol (e.g. "What functions call X?")
+- get_callees: find functions/methods called directly by a specific symbol (e.g. "What functions does X call?")
+- get_dependencies: multi-step downstream call dependency traversal for a symbol (e.g. "What does X depend on?")
+- get_dependents: multi-step upstream reverse dependency traversal for a symbol (e.g. "What depends on X?")
+- get_impact: static impact analysis discovering all callers affected if a symbol changes (e.g. "What could be affected if X changes?")
+- get_file_dependencies: inspect module and file import relationships for a file (e.g. "What files does X depend on?")
 
 Rules:
 1. Never modify project files. All operations must be strictly read-only.
 2. Never execute arbitrary code or shell commands.
 3. Never access secrets or files outside project boundaries.
 4. Base all explanations strictly on evidence retrieved from tools.
-5. When investigating "when" or "why" a function/file changed:
+5. When asked about code relationships, call hierarchy, dependencies, callers, callees, or impact:
+   - "What functions does <symbol> call?": use get_callees with symbol="<symbol>".
+   - "What functions call <symbol>?": use get_callers with symbol="<symbol>".
+   - "What does <symbol> depend on?": use get_dependencies with symbol="<symbol>".
+   - "What depends on <symbol>?": use get_dependents with symbol="<symbol>".
+   - "What could be affected if <symbol> changes?": use get_impact with symbol="<symbol>".
+   - "What files does <file> depend on?" or file imports: use get_file_dependencies with file_path="<file>".
+   - Always choose these specialized graph tools directly for relationship/dependency questions rather than searching or finding symbols.
+6. When investigating "when" or "why" a function/file changed:
    - Locate the symbol or file using search_code / find_symbol / read_file.
    - Query Git history with get_file_history, get_last_commit, get_file_blame, or get_commit.
    - Base reasons on commit messages and diff evidence. Use phrases like "The commit message indicates..." or "The diff suggests...". Do not invent developer intentions.
-6. When investigating code relationships, dependencies, or impact:
-   - Use get_callers, get_callees, get_dependencies, get_impact, or get_file_dependencies.
-   - Clarify that dependency impact analysis is static code analysis.
 7. Clearly distinguish Code sources, Git sources, and Graph sources.
-8. Stop when enough evidence has been collected to give a complete, grounded answer.
+8. Stop when enough evidence has been collected to give a complete, grounded answer. Do not repeat the same tool calls.
 """
 
 
@@ -100,6 +107,8 @@ class CodebaseAgent:
         )
 
         total_tool_calls_count = 0
+        executed_calls_history: set = set()
+        consecutive_repeats = 0
 
         for iteration in range(1, self.max_iterations + 1):
             state.iteration_count = iteration
@@ -134,10 +143,14 @@ class CodebaseAgent:
                 }
                 state.messages.append(assistant_msg)
 
+                has_new_call = False
                 for tc in response.tool_calls:
                     if total_tool_calls_count >= self.max_tool_calls:
                         state.stopped_reason = "max_tool_calls_reached"
                         break
+
+                    call_sig = (tc.name, json.dumps(tc.arguments, sort_keys=True) if isinstance(tc.arguments, dict) else str(tc.arguments))
+                    is_repeat = call_sig in executed_calls_history
 
                     total_tool_calls_count += 1
                     call_record = {
@@ -149,8 +162,19 @@ class CodebaseAgent:
                     if on_tool_call:
                         on_tool_call(tc.name, tc.arguments)
 
-                    # Execute tool safely
-                    exec_result = self.tool_registry.execute(tc.name, tc.arguments)
+                    if is_repeat:
+                        consecutive_repeats += 1
+                        exec_result = {
+                            "success": True,
+                            "data": f"Repetition detected: tool '{tc.name}' with these exact arguments was already executed. Please use the results already present in the conversation history to synthesize your final answer.",
+                            "sources": [],
+                        }
+                    else:
+                        consecutive_repeats = 0
+                        has_new_call = True
+                        executed_calls_history.add(call_sig)
+                        # Execute tool safely
+                        exec_result = self.tool_registry.execute(tc.name, tc.arguments)
 
                     if on_tool_result:
                         on_tool_result(tc.name, exec_result)
@@ -165,6 +189,10 @@ class CodebaseAgent:
                     else:
                         result_content = json.dumps({"error": exec_result["error"]})
 
+                    max_chars = get_max_tool_result_characters()
+                    if len(result_content) > max_chars:
+                        result_content = result_content[:max_chars] + "\n\n[Tool output truncated to max character limit]"
+
                     tool_msg = {
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -173,6 +201,10 @@ class CodebaseAgent:
                     }
                     state.messages.append(tool_msg)
                     state.tool_results.append(exec_result)
+
+                if consecutive_repeats >= 2 or not has_new_call:
+                    state.stopped_reason = "repeated_tool_call"
+                    break
 
             else:
                 # LLM finished reasoning and returned text answer

@@ -758,7 +758,7 @@ def create_get_callers_tool(
 
     return {
         "name": "get_callers",
-        "description": "Returns functions and methods across the codebase that directly call the specified symbol.",
+        "description": "Use this tool when the user asks which functions or methods call a symbol. Returns functions and methods across the codebase that directly call the specified symbol.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -810,7 +810,7 @@ def create_get_callees_tool(
 
     return {
         "name": "get_callees",
-        "description": "Returns functions and methods directly called by the specified symbol.",
+        "description": "Use this tool when the user asks which functions or methods a symbol calls. Returns functions and methods directly called by the specified symbol.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -856,7 +856,7 @@ def create_get_dependencies_tool(
 
     return {
         "name": "get_dependencies",
-        "description": "Performs multi-step downstream dependency traversal of functions/methods called by a symbol.",
+        "description": "Use this tool when the user asks what a symbol depends on. Performs multi-step downstream dependency traversal of functions/methods called by a symbol.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -904,7 +904,7 @@ def create_get_dependents_tool(
 
     return {
         "name": "get_dependents",
-        "description": "Performs multi-step upstream reverse dependency traversal of functions/methods that call a symbol.",
+        "description": "Use this tool when the user asks what depends on a symbol. Performs multi-step upstream reverse dependency traversal of functions/methods that call a symbol.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -952,7 +952,7 @@ def create_get_impact_tool(
 
     return {
         "name": "get_impact",
-        "description": "Performs static dependency impact analysis to discover direct and indirect callers affected if a symbol is modified.",
+        "description": "Use this tool when the user asks what could be affected by changing a symbol. Performs static dependency impact analysis to discover direct and indirect callers affected if a symbol changes.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1003,7 +1003,7 @@ def create_get_file_dependencies_tool(
 
     return {
         "name": "get_file_dependencies",
-        "description": "Returns imported files, imported modules, and dependent files that import the specified file.",
+        "description": "Use this tool when the user asks about dependencies of a file. Returns imported files, imported modules, and dependent files that import the specified file.",
         "parameters": {
             "type": "object",
             "properties": {

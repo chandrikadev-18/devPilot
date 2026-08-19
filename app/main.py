@@ -822,6 +822,8 @@ def run_agent(
                     print(f"Query:\n{args['query']}\n")
                 elif "file_path" in args:
                     print(f"File:\n{args['file_path']}\n")
+                elif "symbol" in args:
+                    print(f"Symbol:\n{args['symbol']}\n")
                 elif "symbol_name" in args:
                     print(f"Symbol:\n{args['symbol_name']}\n")
 
@@ -844,11 +846,11 @@ def run_agent(
                     print()
 
         if not as_json and not debug:
-            print("DevPilot v0.9 - Codebase & Git Agent\n")
+            print("DevPilot v1.0 - Codebase & Dependency Graph Agent\n")
             print(f"Question:\n{question}\n")
             print("Agent:\n")
         elif debug and not as_json:
-            print("DevPilot v0.9 - Codebase & Git Agent (Debug Mode)\n")
+            print("DevPilot v1.0 - Codebase & Dependency Graph Agent (Debug Mode)\n")
             print(f"Question:\n{question}\n")
 
         result = agent.run(
