@@ -15,6 +15,7 @@ from app.llm.base import (
     LLMRateLimitError,
     LLMTimeoutError,
     ToolCall,
+    strip_thinking_and_tool_tags,
 )
 from app.llm.provider import GroqProvider, create_llm_provider
 
@@ -30,4 +31,5 @@ __all__ = [
     "LLMTimeoutError",
     "LLMRateLimitError",
     "LLMEmptyResponseError",
+    "strip_thinking_and_tool_tags",
 ]

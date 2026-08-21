@@ -16,6 +16,7 @@ from app.config import (
     get_max_tool_calls,
     get_max_tool_result_characters,
 )
+from app.llm import strip_thinking_and_tool_tags
 from app.llm.base import LLMProvider
 
 DEFAULT_AGENT_SYSTEM_PROMPT = """You are DevPilot, an advanced codebase, Git, and Dependency Graph analysis agent.
@@ -24,8 +25,8 @@ You have access to read-only tools to inspect the repository code, Git history, 
 
 Available tools include:
 - search_code: semantic search across indexed codebase chunks
-- read_file: read text contents of a project file
-- find_symbol: locate function, class, or method definitions
+- read_file: read text contents or specific line ranges of a project file
+- find_symbol: locate function, class, or method definitions by name or qualified path
 - get_file_structure: inspect AST structure (classes, functions, methods, imports)
 - get_file_history: retrieve recent Git commits that modified a specific file
 - get_recent_commits: retrieve recent Git commits across the repository
@@ -43,7 +44,7 @@ Rules:
 1. Never modify project files. All operations must be strictly read-only.
 2. Never execute arbitrary code or shell commands.
 3. Never access secrets or files outside project boundaries.
-4. Base all explanations strictly on evidence retrieved from tools.
+4. Base all explanations strictly on evidence retrieved from tools. Do not invent information. If information is unavailable, explicitly state so.
 5. When asked about code relationships, call hierarchy, dependencies, callers, callees, or impact:
    - "What functions does <symbol> call?": use get_callees with symbol="<symbol>".
    - "What functions call <symbol>?": use get_callers with symbol="<symbol>".
@@ -52,12 +53,26 @@ Rules:
    - "What could be affected if <symbol> changes?": use get_impact with symbol="<symbol>".
    - "What files does <file> depend on?" or file imports: use get_file_dependencies with file_path="<file>".
    - Always choose these specialized graph tools directly for relationship/dependency questions rather than searching or finding symbols.
-6. When investigating "when" or "why" a function/file changed:
+6. When explaining code, functions, methods, or classes (e.g. "Explain <symbol>", "Explain the <symbol> function", "What does <symbol> do?", "How does <symbol> work?"):
+   - Step 1: Use find_symbol with symbol_name="<symbol>". This tool returns the exact symbol location (file and line numbers) and the full source code snippet.
+   - Step 2: Use the source code snippet returned by find_symbol to synthesize your explanation. You do NOT need to call read_file if find_symbol already returned the code.
+   - Step 3 (Optional): If understanding incoming/outgoing calls is helpful, call get_callees or get_callers.
+   - Step 4: Synthesize the final explanation immediately. Never call read_file or any other tool repeatedly for the same file or symbol.
+   - Provide a well-structured explanation covering:
+     * Location (`file_path:line`)
+     * Purpose / Overview
+     * Signature, Parameters & Return Value
+     * Main Responsibilities & Key Execution Steps
+     * Important Functions Called (Callees) & Callers (Call Hierarchy)
+     * Important Classes / Types Used & Dependencies
+     * Side Effects & Error Handling (if visible)
+     * Testing Considerations (how to test, mocks, edge cases)
+7. When investigating "when" or "why" a function/file changed:
    - Locate the symbol or file using search_code / find_symbol / read_file.
    - Query Git history with get_file_history, get_last_commit, get_file_blame, or get_commit.
    - Base reasons on commit messages and diff evidence. Use phrases like "The commit message indicates..." or "The diff suggests...". Do not invent developer intentions.
-7. Clearly distinguish Code sources, Git sources, and Graph sources.
-8. Stop when enough evidence has been collected to give a complete, grounded answer. Do not repeat the same tool calls.
+8. Clearly distinguish Code sources, Git sources, and Graph sources.
+9. Stop when enough evidence has been collected to give a complete, grounded answer. Do not repeat the same tool calls.
 """
 
 
@@ -107,8 +122,9 @@ class CodebaseAgent:
         )
 
         total_tool_calls_count = 0
-        executed_calls_history: set = set()
-        consecutive_repeats = 0
+        executed_tool_calls_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        executed_file_reads: Dict[str, List[Tuple[Optional[int], Optional[int]]]] = {}
+        consecutive_duplicate_iterations = 0
 
         for iteration in range(1, self.max_iterations + 1):
             state.iteration_count = iteration
@@ -126,9 +142,10 @@ class CodebaseAgent:
 
             # If LLM returned tool calls
             if response.has_tool_calls:
+                cleaned_content = strip_thinking_and_tool_tags(response.content or "")
                 assistant_msg: Dict[str, Any] = {
                     "role": "assistant",
-                    "content": response.content or "",
+                    "content": cleaned_content,
                     "tool_calls": [
                         {
                             "id": tc.id,
@@ -149,8 +166,24 @@ class CodebaseAgent:
                         state.stopped_reason = "max_tool_calls_reached"
                         break
 
-                    call_sig = (tc.name, json.dumps(tc.arguments, sort_keys=True) if isinstance(tc.arguments, dict) else str(tc.arguments))
-                    is_repeat = call_sig in executed_calls_history
+                    args_json = json.dumps(tc.arguments, sort_keys=True) if isinstance(tc.arguments, dict) else str(tc.arguments)
+                    call_sig = (tc.name, args_json)
+                    is_repeat = call_sig in executed_tool_calls_cache
+
+                    is_redundant_read = False
+                    if not is_repeat and tc.name == "read_file" and isinstance(tc.arguments, dict):
+                        f_path = tc.arguments.get("file_path", "")
+                        s_line = tc.arguments.get("start_line")
+                        e_line = tc.arguments.get("end_line")
+                        if f_path in executed_file_reads:
+                            for prev_s, prev_e in executed_file_reads[f_path]:
+                                if prev_s is None and prev_e is None:
+                                    is_redundant_read = True
+                                    break
+                                if s_line is not None and e_line is not None and prev_s is not None and prev_e is not None:
+                                    if prev_s <= s_line and prev_e >= e_line:
+                                        is_redundant_read = True
+                                        break
 
                     total_tool_calls_count += 1
                     call_record = {
@@ -159,25 +192,37 @@ class CodebaseAgent:
                     }
                     state.tool_calls.append(call_record)
 
-                    if on_tool_call:
-                        on_tool_call(tc.name, tc.arguments)
-
                     if is_repeat:
-                        consecutive_repeats += 1
+                        prev_res = executed_tool_calls_cache[call_sig]
                         exec_result = {
                             "success": True,
-                            "data": f"Repetition detected: tool '{tc.name}' with these exact arguments was already executed. Please use the results already present in the conversation history to synthesize your final answer.",
+                            "data": "Duplicate tool call detected. This exact tool call was already executed. Use the previous result instead.",
+                            "sources": prev_res.get("sources", []),
+                        }
+                    elif is_redundant_read:
+                        exec_result = {
+                            "success": True,
+                            "data": f"Duplicate tool call detected. The content of '{tc.arguments.get('file_path')}' is already available in previous tool results in conversation history. Please use the results already present in the conversation history.",
                             "sources": [],
                         }
                     else:
-                        consecutive_repeats = 0
                         has_new_call = True
-                        executed_calls_history.add(call_sig)
-                        # Execute tool safely
-                        exec_result = self.tool_registry.execute(tc.name, tc.arguments)
+                        if on_tool_call:
+                            on_tool_call(tc.name, tc.arguments)
 
-                    if on_tool_result:
-                        on_tool_result(tc.name, exec_result)
+                        exec_result = self.tool_registry.execute(tc.name, tc.arguments)
+                        executed_tool_calls_cache[call_sig] = exec_result
+
+                        if tc.name == "read_file" and isinstance(tc.arguments, dict) and exec_result.get("success"):
+                            f_path = tc.arguments.get("file_path", "")
+                            if f_path:
+                                executed_file_reads.setdefault(f_path, []).append((
+                                    tc.arguments.get("start_line"),
+                                    tc.arguments.get("end_line")
+                                ))
+
+                        if on_tool_result:
+                            on_tool_result(tc.name, exec_result)
 
                     # Track verified sources
                     for src in exec_result.get("sources", []):
@@ -185,7 +230,7 @@ class CodebaseAgent:
 
                     # Serialize output for LLM message history
                     if exec_result["success"]:
-                        result_content = json.dumps(exec_result["data"], indent=2)
+                        result_content = json.dumps(exec_result["data"], indent=2) if not isinstance(exec_result["data"], str) else exec_result["data"]
                     else:
                         result_content = json.dumps({"error": exec_result["error"]})
 
@@ -202,29 +247,38 @@ class CodebaseAgent:
                     state.messages.append(tool_msg)
                     state.tool_results.append(exec_result)
 
-                if consecutive_repeats >= 2 or not has_new_call:
-                    state.stopped_reason = "repeated_tool_call"
-                    break
+                if not has_new_call:
+                    consecutive_duplicate_iterations += 1
+                    if consecutive_duplicate_iterations >= 1:
+                        state.stopped_reason = "repeated_tool_call"
+                        break
+                else:
+                    consecutive_duplicate_iterations = 0
 
             else:
                 # LLM finished reasoning and returned text answer
-                state.final_answer = response.content or ""
+                state.final_answer = strip_thinking_and_tool_tags(response.content or "")
                 state.stopped_reason = "completed"
                 break
 
-        # If loop reached max iterations without returning final text answer
-        if state.final_answer is None:
+        # If loop reached max iterations or stopped without returning final text answer
+        if state.final_answer is None or not state.final_answer.strip():
             if state.stopped_reason == "running":
                 state.stopped_reason = "max_iterations_reached"
 
             synthesis_messages = list(state.messages) + [
                 {
                     "role": "user",
-                    "content": "Please synthesize your final answer to the question using all retrieved evidence collected so far.",
+                    "content": "Please synthesize a clear, comprehensive explanation to the question based on the retrieved code and tool results collected above.",
                 }
             ]
             final_res = self.llm.chat(messages=synthesis_messages)
-            state.final_answer = final_res.content or "Could not complete synthesis within execution limits."
+            synthesis_text = strip_thinking_and_tool_tags(final_res.content or "")
+
+            if synthesis_text and synthesis_text.strip():
+                state.final_answer = synthesis_text.strip()
+            else:
+                state.final_answer = self._generate_fallback_explanation(state)
 
         total_time = time.time() - t_start
 
@@ -239,3 +293,25 @@ class CodebaseAgent:
             timing={"total": total_time},
             stopped_reason=state.stopped_reason,
         )
+
+    def _generate_fallback_explanation(self, state: AgentState) -> str:
+        """Generates a grounded fallback explanation from collected tool results if synthesis returns empty."""
+        for res in state.tool_results:
+            if not res.get("success"):
+                continue
+            data = res.get("data")
+            if isinstance(data, list) and data:
+                first = data[0]
+                if isinstance(first, dict) and "symbol_name" in first and "file_path" in first:
+                    sym = first["symbol_name"]
+                    f_path = first["file_path"]
+                    s_line = first.get("start_line", 1)
+                    e_line = first.get("end_line", s_line)
+                    code = first.get("code", "")
+                    return f"## {sym}()\n\n**Location:** `{f_path}:{s_line}-{e_line}`\n\n**Description:**\n{sym} is defined in `{f_path}`.\n\n```python\n{code}\n```"
+            elif isinstance(data, dict) and "file_path" in data and "content" in data:
+                f_path = data["file_path"]
+                content = data["content"]
+                return f"## Source Explanation for `{f_path}`\n\n```python\n{content[:2000]}\n```"
+
+        return "Could not retrieve sufficient evidence to explain the requested symbol."

@@ -35,6 +35,7 @@ from app.llm import (
     LLMError,
     LLMProvider,
     create_llm_provider,
+    strip_thinking_and_tool_tags,
 )
 from app.rag import (
     ContextBuilder,
@@ -846,11 +847,11 @@ def run_agent(
                     print()
 
         if not as_json and not debug:
-            print("DevPilot v1.0 - Codebase & Dependency Graph Agent\n")
+            print("DevPilot v1.1 - Codebase & Dependency Graph Agent\n")
             print(f"Question:\n{question}\n")
             print("Agent:\n")
         elif debug and not as_json:
-            print("DevPilot v1.0 - Codebase & Dependency Graph Agent (Debug Mode)\n")
+            print("DevPilot v1.1 - Codebase & Dependency Graph Agent (Debug Mode)\n")
             print(f"Question:\n{question}\n")
 
         result = agent.run(
@@ -872,6 +873,8 @@ def run_agent(
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    result.answer = strip_thinking_and_tool_tags(result.answer)
 
     if as_json:
         print(json.dumps(result.to_dict(), indent=2))

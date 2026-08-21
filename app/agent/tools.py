@@ -128,8 +128,12 @@ def create_read_file_tool(
     root = (project_root or Path.cwd()).resolve()
     char_limit = max_characters or get_max_tool_result_characters()
 
-    def read_file(file_path: str) -> Dict[str, Any]:
-        """Reads a file safely within project boundaries."""
+    def read_file(
+        file_path: str,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Reads a file safely within project boundaries, optionally slicing specific lines."""
         safe_path = resolve_safe_path(file_path, project_root=root)
 
         if not safe_path.exists():
@@ -139,12 +143,26 @@ def create_read_file_tool(
 
         try:
             with open(safe_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
+                raw_content = f.read()
         except Exception as e:
             raise IOError(f"Could not read file '{file_path}': {e}") from e
 
         rel_path = safe_path.relative_to(root).as_posix()
-        line_count = len(content.splitlines())
+        lines = raw_content.splitlines()
+        total_lines = len(lines)
+
+        s_line = 1
+        e_line = total_lines
+
+        if start_line is not None or end_line is not None:
+            s_line = max(1, start_line) if start_line is not None else 1
+            e_line = min(total_lines, end_line) if end_line is not None else total_lines
+            if s_line > e_line:
+                s_line = e_line
+            sliced_lines = lines[s_line - 1 : e_line]
+            content = "\n".join(sliced_lines)
+        else:
+            content = raw_content
 
         truncated = False
         if len(content) > char_limit:
@@ -155,14 +173,16 @@ def create_read_file_tool(
             "file_path": rel_path,
             "symbol_name": safe_path.name,
             "symbol_type": "file",
-            "start_line": 1,
-            "end_line": line_count,
+            "start_line": s_line,
+            "end_line": e_line,
         }]
 
         return {
             "data": {
                 "file_path": rel_path,
-                "lines": line_count,
+                "lines": total_lines,
+                "start_line": s_line,
+                "end_line": e_line,
                 "truncated": truncated,
                 "content": content,
             },
@@ -171,11 +191,13 @@ def create_read_file_tool(
 
     return {
         "name": "read_file",
-        "description": "Reads the text contents of a file in the project.",
+        "description": "Reads text contents or specific line ranges of a file in the project.",
         "parameters": {
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "Relative path of the project file to read"},
+                "start_line": {"type": "integer", "minimum": 1, "description": "Optional starting line number (1-indexed)"},
+                "end_line": {"type": "integer", "minimum": 1, "description": "Optional ending line number (1-indexed)"},
             },
             "required": ["file_path"],
         },
@@ -185,6 +207,7 @@ def create_read_file_tool(
 
 
 def create_find_symbol_tool(
+    graph: Optional[Any] = None,
     vector_store: Optional[QdrantVectorStore] = None,
     collection_name: str = DEFAULT_COLLECTION_NAME,
     project_root: Optional[Path] = None,
@@ -193,60 +216,91 @@ def create_find_symbol_tool(
     root = (project_root or Path.cwd()).resolve()
 
     def find_symbol(symbol_name: str) -> Dict[str, Any]:
-        """Locates symbol definitions in indexed points or through AST parsing."""
+        """Locates exact symbol definitions (functions, classes, methods) via graph, AST, and index."""
         if not symbol_name or not symbol_name.strip():
             raise ValueError("symbol_name cannot be empty.")
 
         target_name = symbol_name.strip().lower()
-        matches = []
+        parts = [p for p in target_name.split(".") if p]
+        leaf_name = parts[-1] if parts else target_name
+        qualifiers = parts[:-1]
+
+        seen_keys = set()
+        exact_matches = []
         sources = []
 
-        # 1. Try querying Qdrant payload if vector_store is available
-        if vector_store and vector_store.collection_exists(collection_name):
+        def get_code_snippet(rel_p: str, start_line: int, end_line: int) -> str:
+            if not rel_p or start_line <= 0:
+                return ""
             try:
-                # Scroll points to locate matching symbol_name
-                scroll_res = vector_store.client.scroll(
-                    collection_name=collection_name,
-                    limit=100,
-                    with_payload=True,
-                    with_vectors=False,
-                )
-                points = scroll_res[0] if isinstance(scroll_res, tuple) else scroll_res
-                for pt in points:
-                    payload = pt.payload or {}
-                    s_name = payload.get("symbol_name", "")
-                    p_symbol = payload.get("parent_symbol", "")
-                    if target_name in s_name.lower() or (p_symbol and target_name in p_symbol.lower()):
-                        item = {
-                            "chunk_id": payload.get("chunk_id", str(pt.id)),
-                            "file_path": payload.get("file_path", ""),
-                            "symbol_name": s_name,
-                            "symbol_type": payload.get("symbol_type", ""),
-                            "parent_symbol": payload.get("parent_symbol"),
-                            "start_line": payload.get("start_line", 0),
-                            "end_line": payload.get("end_line", 0),
-                            "code": payload.get("code", ""),
-                        }
-                        matches.append(item)
-                        sources.append({
-                            "chunk_id": item["chunk_id"],
-                            "file_path": item["file_path"],
-                            "symbol_name": item["symbol_name"],
-                            "symbol_type": item["symbol_type"],
-                            "parent_symbol": item["parent_symbol"],
-                            "start_line": item["start_line"],
-                            "end_line": item["end_line"],
-                        })
+                safe = resolve_safe_path(rel_p, project_root=root)
+                if safe.is_file():
+                    lines = safe.read_text(encoding="utf-8", errors="replace").splitlines()
+                    s_idx = max(0, start_line - 1)
+                    e_idx = min(len(lines), end_line) if end_line > 0 else len(lines)
+                    return "\n".join(lines[s_idx:e_idx])
             except Exception:
                 pass
+            return ""
 
-        # 2. Fallback / Direct AST inspection across project python files if no indexed matches
-        if not matches:
+        def matches_qualifiers(file_path: str, parent_symbol: Optional[str]) -> bool:
+            if not qualifiers:
+                return True
+            f_lower = file_path.lower().replace("\\", "/")
+            p_lower = (parent_symbol or "").lower()
+            for q in qualifiers:
+                if q in f_lower or q in p_lower:
+                    return True
+            return False
+
+        def add_match(item: Dict[str, Any], src: Dict[str, Any]):
+            key = (item.get("file_path"), item.get("symbol_name"), item.get("start_line"))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                if not item.get("code") and item.get("file_path") and item.get("start_line"):
+                    item["code"] = get_code_snippet(item["file_path"], item["start_line"], item.get("end_line", 0))
+                exact_matches.append(item)
+                sources.append(src)
+
+        # 1. First check the Dependency Graph (reusing existing graph resolution)
+        try:
+            from app.graph.models import NodeType
+            active_graph = _resolve_graph(graph, root)
+            if active_graph:
+                graph_nodes = active_graph.find_nodes_by_name(leaf_name)
+                if not graph_nodes and "." in target_name:
+                    graph_nodes = active_graph.find_nodes_by_name(target_name)
+
+                for gn in graph_nodes:
+                    if gn.node_type in (NodeType.FUNCTION, NodeType.METHOD, NodeType.CLASS):
+                        parent_cls = gn.metadata.get("parent_class")
+                        if matches_qualifiers(gn.file_path, parent_cls):
+                            add_match({
+                                "file_path": gn.file_path,
+                                "symbol_name": gn.name,
+                                "symbol_type": gn.node_type.value.lower(),
+                                "parent_symbol": parent_cls,
+                                "start_line": gn.start_line or 0,
+                                "end_line": gn.end_line or 0,
+                                "code": get_code_snippet(gn.file_path, gn.start_line or 0, gn.end_line or 0),
+                            }, {
+                                "source_type": "graph",
+                                "file_path": gn.file_path,
+                                "symbol_name": gn.name,
+                                "symbol_type": gn.node_type.value.lower(),
+                                "parent_symbol": parent_cls,
+                                "start_line": gn.start_line or 0,
+                                "end_line": gn.end_line or 0,
+                            })
+        except Exception:
+            pass
+
+        # 2. Check AST across project python files (if not found in graph)
+        if not exact_matches:
             parser = PythonParser()
             for py_file in root.rglob("*.py"):
-                # Avoid hidden/ignored folders
-                parts = [p.lower() for p in py_file.parts]
-                if any(p.startswith(".") or p in ("venv", "node_modules", "__pycache__") for p in parts):
+                parts_f = [p.lower() for p in py_file.parts]
+                if any(p.startswith(".") or p in ("venv", "node_modules", "__pycache__") for p in parts_f):
                     continue
                 try:
                     rel_p = py_file.relative_to(root).as_posix()
@@ -256,19 +310,20 @@ def create_find_symbol_tool(
 
                     # Check classes
                     for cls in file_info.get("classes", []):
-                        if target_name == cls.get("name", "").lower():
-                            matches.append({
+                        c_name = cls.get("name", "")
+                        c_lower = c_name.lower()
+                        if (c_lower == target_name or c_lower == leaf_name) and matches_qualifiers(rel_p, None):
+                            add_match({
                                 "file_path": rel_p,
-                                "symbol_name": cls["name"],
+                                "symbol_name": c_name,
                                 "symbol_type": "class",
                                 "parent_symbol": None,
                                 "start_line": cls.get("start_line", 0),
                                 "end_line": cls.get("end_line", 0),
-                                "code": cls.get("code", ""),
-                            })
-                            sources.append({
+                                "code": cls.get("code", "") or get_code_snippet(rel_p, cls.get("start_line", 0), cls.get("end_line", 0)),
+                            }, {
                                 "file_path": rel_p,
-                                "symbol_name": cls["name"],
+                                "symbol_name": c_name,
                                 "symbol_type": "class",
                                 "parent_symbol": None,
                                 "start_line": cls.get("start_line", 0),
@@ -277,19 +332,20 @@ def create_find_symbol_tool(
 
                     # Check functions
                     for fn in file_info.get("functions", []):
-                        if target_name == fn.get("name", "").lower():
-                            matches.append({
+                        f_name = fn.get("name", "")
+                        f_lower = f_name.lower()
+                        if (f_lower == target_name or f_lower == leaf_name) and matches_qualifiers(rel_p, None):
+                            add_match({
                                 "file_path": rel_p,
-                                "symbol_name": fn["name"],
+                                "symbol_name": f_name,
                                 "symbol_type": "function",
                                 "parent_symbol": None,
                                 "start_line": fn.get("start_line", 0),
                                 "end_line": fn.get("end_line", 0),
-                                "code": fn.get("code", ""),
-                            })
-                            sources.append({
+                                "code": fn.get("code", "") or get_code_snippet(rel_p, fn.get("start_line", 0), fn.get("end_line", 0)),
+                            }, {
                                 "file_path": rel_p,
-                                "symbol_name": fn["name"],
+                                "symbol_name": f_name,
                                 "symbol_type": "function",
                                 "parent_symbol": None,
                                 "start_line": fn.get("start_line", 0),
@@ -298,19 +354,30 @@ def create_find_symbol_tool(
 
                     # Check methods
                     for m in file_info.get("methods", []):
-                        if target_name == m.get("name", "").lower():
-                            matches.append({
+                        m_name = m.get("name", "")
+                        m_lower = m_name.lower()
+                        p_class = m.get("parent_class") or ""
+                        p_lower = p_class.lower()
+                        full_method = f"{p_lower}.{m_lower}"
+
+                        matched = False
+                        if target_name in (m_lower, full_method):
+                            matched = True
+                        elif leaf_name == m_lower and matches_qualifiers(rel_p, p_class):
+                            matched = True
+
+                        if matched:
+                            add_match({
                                 "file_path": rel_p,
-                                "symbol_name": m["name"],
+                                "symbol_name": m_name,
                                 "symbol_type": "method",
                                 "parent_symbol": m.get("parent_class"),
                                 "start_line": m.get("start_line", 0),
                                 "end_line": m.get("end_line", 0),
-                                "code": m.get("code", ""),
-                            })
-                            sources.append({
+                                "code": m.get("code", "") or get_code_snippet(rel_p, m.get("start_line", 0), m.get("end_line", 0)),
+                            }, {
                                 "file_path": rel_p,
-                                "symbol_name": m["name"],
+                                "symbol_name": m_name,
                                 "symbol_type": "method",
                                 "parent_symbol": m.get("parent_class"),
                                 "start_line": m.get("start_line", 0),
@@ -319,24 +386,85 @@ def create_find_symbol_tool(
                 except Exception:
                     continue
 
-        if not matches:
+        # 3. Check Qdrant Vector Store payload for exact matches
+        if vector_store and vector_store.collection_exists(collection_name):
+            try:
+                scroll_res = vector_store.client.scroll(
+                    collection_name=collection_name,
+                    limit=200,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                points = scroll_res[0] if isinstance(scroll_res, tuple) else scroll_res
+                for pt in points:
+                    payload = pt.payload or {}
+                    s_name = payload.get("symbol_name", "")
+                    s_lower = s_name.lower()
+                    p_symbol = payload.get("parent_symbol", "")
+                    p_lower = (p_symbol or "").lower()
+                    f_path = payload.get("file_path", "")
+
+                    is_match = False
+                    if target_name == s_lower or (p_symbol and target_name == p_lower):
+                        is_match = True
+                    elif leaf_name == s_lower or (p_symbol and leaf_name == p_lower):
+                        if matches_qualifiers(f_path, p_symbol):
+                            is_match = True
+
+                    if is_match:
+                        add_match({
+                            "chunk_id": payload.get("chunk_id", str(pt.id)),
+                            "file_path": f_path,
+                            "symbol_name": s_name,
+                            "symbol_type": payload.get("symbol_type", ""),
+                            "parent_symbol": payload.get("parent_symbol"),
+                            "start_line": payload.get("start_line", 0),
+                            "end_line": payload.get("end_line", 0),
+                            "code": payload.get("code", "") or get_code_snippet(f_path, payload.get("start_line", 0), payload.get("end_line", 0)),
+                        }, {
+                            "chunk_id": payload.get("chunk_id", str(pt.id)),
+                            "file_path": f_path,
+                            "symbol_name": s_name,
+                            "symbol_type": payload.get("symbol_type", ""),
+                            "parent_symbol": payload.get("parent_symbol"),
+                            "start_line": payload.get("start_line", 0),
+                            "end_line": payload.get("end_line", 0),
+                        })
+            except Exception:
+                pass
+
+        if not exact_matches:
             return {
                 "data": f"Symbol '{symbol_name}' was not found in the codebase.",
                 "sources": [],
             }
 
+        # Sort: source files before test files, exact name match before partial
+        exact_matches.sort(key=lambda m: (
+            1 if m.get("file_path", "").startswith("tests") or "/tests/" in m.get("file_path", "").replace("\\", "/") else 0,
+            0 if m.get("symbol_name", "").lower() == target_name else 1,
+        ))
+
+        # Synchronize sources ordering
+        sorted_sources = []
+        for m in exact_matches:
+            for s in sources:
+                if s.get("file_path") == m.get("file_path") and s.get("symbol_name") == m.get("symbol_name") and s.get("start_line") == m.get("start_line"):
+                    sorted_sources.append(s)
+                    break
+
         return {
-            "data": matches,
-            "sources": sources,
+            "data": exact_matches,
+            "sources": sorted_sources if sorted_sources else sources,
         }
 
     return {
         "name": "find_symbol",
-        "description": "Locates symbol definitions (functions, classes, methods) across the codebase.",
+        "description": "Use this tool to locate a symbol such as a function, class, or method by exact or qualified symbol name.",
         "parameters": {
             "type": "object",
             "properties": {
-                "symbol_name": {"type": "string", "description": "Name of the function, class, or method to find"},
+                "symbol_name": {"type": "string", "description": "Exact or qualified name of the function, class, or method to find"},
             },
             "required": ["symbol_name"],
         },
@@ -758,7 +886,7 @@ def create_get_callers_tool(
 
     return {
         "name": "get_callers",
-        "description": "Use this tool when the user asks which functions or methods call a symbol. Returns functions and methods across the codebase that directly call the specified symbol.",
+        "description": "Use this tool when you need to understand which functions or methods call a symbol.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -810,7 +938,7 @@ def create_get_callees_tool(
 
     return {
         "name": "get_callees",
-        "description": "Use this tool when the user asks which functions or methods a symbol calls. Returns functions and methods directly called by the specified symbol.",
+        "description": "Use this tool when you need to understand which functions, methods, or constructors a symbol calls.",
         "parameters": {
             "type": "object",
             "properties": {

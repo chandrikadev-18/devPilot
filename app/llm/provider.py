@@ -24,6 +24,7 @@ from app.llm.base import (
     LLMRateLimitError,
     LLMTimeoutError,
     ToolCall,
+    strip_thinking_and_tool_tags,
 )
 
 
@@ -154,7 +155,8 @@ class GroqProvider(LLMProvider):
                             )
                         )
 
-                content = getattr(message, "content", None)
+                raw_content = getattr(message, "content", None)
+                content = strip_thinking_and_tool_tags(raw_content) if raw_content else None
 
                 return LLMChatResponse(
                     content=content,
