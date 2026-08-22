@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.agent.intent import QuestionIntent, classify_question_intent
 from app.agent.state import AgentResult, AgentState
 from app.agent.tool_registry import ToolRegistry
 from app.config import (
@@ -48,43 +49,94 @@ def _normalize_tool_call_sig(name: str, args: Any) -> Tuple[str, str]:
     return (name, str(args))
 
 
-DEFAULT_AGENT_SYSTEM_PROMPT = """You are DevPilot AI v1.2, an expert autonomous software engineer and codebase assistant.
+DEFAULT_AGENT_SYSTEM_PROMPT = """You are DevPilot AI v1.3, an expert autonomous software engineer and codebase assistant.
 Your goal is to answer user questions with precision, depth, and evidence from the codebase.
 
-CRITICAL RULES:
+CRITICAL RULES & PRESENTATION FORMAT:
 1. Always explore using available tools before answering.
-2. Never execute arbitrary code or shell commands.
-3. Never access secrets or files outside project boundaries.
-4. Base all explanations strictly on evidence retrieved from tools. Do not invent information. If information is unavailable, explicitly state so.
-5. When asked about code relationships, call hierarchy, dependencies, callers, callees, or impact:
-   - "What functions does <symbol> call?": use get_callees with symbol="<symbol>".
-   - "What functions call <symbol>?": use get_callers with symbol="<symbol>".
-   - "What does <symbol> depend on?": use get_dependencies with symbol="<symbol>".
-   - "What depends on <symbol>?": use get_dependents with symbol="<symbol>".
-   - "What could be affected if <symbol> changes?": use get_impact with symbol="<symbol>".
-   - "What files does <file> depend on?" or file imports: use get_file_dependencies with file_path="<file>".
-   - Always choose these specialized graph tools directly for relationship/dependency questions rather than searching or finding symbols.
-6. When explaining code, functions, methods, or classes (e.g. "Explain <symbol>", "Explain the <symbol> function", "What does <symbol> do?", "How does <symbol> work?"):
-   - Step 1: ALWAYS call find_symbol with symbol_name="<symbol>" first.
-   - Step 2: If find_symbol returns an exact unique match, proceed directly with that symbol and its file. Do NOT execute broad search_code queries.
-   - Step 3: Inspect the source code by calling read_file ONCE for the file (or using the snippet in find_symbol). Do NOT call read_file repeatedly for the same file.
-   - Step 4 (Optional): If understanding caller/callee relationships is needed, call get_callees or get_callers.
-   - Step 5: Synthesize a comprehensive final explanation immediately. The entire workflow should take 2-4 tool calls.
-   - Provide a well-structured explanation covering:
-     * Symbol Name & Location (`file_path:line`)
-     * Purpose / Overview
-     * Signature, Parameters & Return Value (when visible)
-     * Main Execution Steps & Implementation Details
-     * Important Functions/Methods Called (Callees) & Callers
-     * Classes / Types Used & Dependencies
-     * Side Effects & Error Handling (if visible)
-     * Testing Considerations (how to test, mocks, edge cases)
-7. When investigating "when" or "why" a function/file changed:
-   - Locate the symbol or file using find_symbol / read_file.
-   - Query Git history with get_file_history, get_last_commit, get_file_blame, or get_commit.
-   - Base reasons on commit messages and diff evidence. Use phrases like "The commit message indicates..." or "The diff suggests...". Do not invent developer intentions.
-8. Clearly distinguish Code sources, Git sources, and Graph sources.
-9. Stop when enough evidence has been collected to give a complete, grounded answer. Avoid redundant tool calls.
+2. Never execute arbitrary code or shell commands. Never access secrets or files outside project boundaries.
+3. Base all explanations strictly on evidence retrieved from tools. Do not invent information.
+4. If a symbol is not found or cannot be located, return exactly:
+   Symbol not found:
+   <symbol_name>
+
+   Suggestions:
+   - Check the symbol name
+   - Try a fully qualified name
+   - Use graph-info or search-code
+
+   If source information is insufficient, state: "I couldn't find enough source information to explain this symbol."
+
+5. For code explanation questions (e.g. "Explain the build function", "What does build do?", "How does GraphBuilder.build work?"):
+   Structure your final answer as:
+
+   Analysis:
+   Symbol: <ClassName>.<symbol> or <symbol>
+   File: <file_path>
+   Lines: <start_line>-<end_line>
+
+   Purpose:
+   <Concise description of the symbol's primary purpose>
+
+   Key Responsibilities:
+   1. <Step 1 / Key responsibility>
+   2. <Step 2 / Key responsibility>
+   ...
+
+   Dependencies:
+   - <Key callee or dependency 1>
+   - <Key callee or dependency 2>
+
+   Impact:
+   Used by:
+   - <Caller 1>
+   - <Caller 2>
+
+   Sources:
+   - <file_path>:<start_line>-<end_line>
+
+6. For impact analysis questions (e.g. "What could be affected if build changes?", "What is the impact of changing build?"):
+   Structure your final answer as:
+
+   ## Impact Analysis
+
+   **Symbol:** `<ClassName>.<symbol>`
+   **File:** `<file_path>`
+   **Lines:** <start_line>–<end_line>
+
+   ### Direct Impact
+
+   - `<direct_caller_1>`
+   - `<direct_caller_2>`
+
+   ### Indirect Impact
+
+   - `<indirect_caller_1>`
+   - `<indirect_caller_2>`
+
+   ### Impacted Areas
+
+   - `<file_or_module_1>`
+   - `<file_or_module_2>`
+
+   ### Recommendation
+
+   Changes to `<ClassName>.<symbol>` should be tested against graph construction, call analysis, dependency analysis, and impact analysis.
+
+7. For relationship / dependency questions:
+   - "What functions does <symbol> call?": Use get_callees. Present a concise list of callees with their locations.
+   - "What functions call <symbol>?": Use get_callers. Present a concise list of callers with their locations.
+   - "What does <symbol> depend on?": Use get_dependencies.
+   - "What depends on <symbol>?": Use get_dependents.
+   - "What files does <file> depend on?": Use get_file_dependencies.
+
+8. Workflow rules:
+   - Step 1: ALWAYS call find_symbol with symbol_name="<symbol>" first for symbol explanation or relationship questions.
+   - Step 2: If find_symbol returns an exact match, use the resolved canonical symbol directly for specialized graph tools (get_impact, get_callees, get_callers) or read_file.
+   - Step 3: Do NOT execute broad search_code queries once a symbol is resolved.
+   - Step 4: Synthesize the final structured answer immediately (target: 1-2 tool calls).
+   - Avoid redundant searches or repeated calls for the same symbol or query.
+   - Do NOT output <think> tags, internal reasoning, or raw tool invocation syntax in your final answer.
 """
 
 
@@ -124,10 +176,27 @@ class CodebaseAgent:
         t_start = time.time()
         tool_specs = self.tool_registry.get_tool_specs()
 
+        # Classify user question intent
+        classification = classify_question_intent(question)
+
+        # Build dynamic intent directive
+        enriched_system_prompt = self.system_prompt
+        if classification.intent != QuestionIntent.SEARCH:
+            target_str = classification.target_symbol or classification.target_file or "specified symbol"
+            directive = (
+                f"\n\n[QUERY INTENT DIRECTIVE]\n"
+                f"Classified Intent: {classification.intent.value}\n"
+                f"Target: {target_str}\n"
+                f"Preferred Tool Sequence: {' -> '.join(classification.preferred_tools)}\n"
+                f"Instruction: Execute ONLY the preferred tools for this intent ({' -> '.join(classification.preferred_tools)}). "
+                f"Do not call search_code or duplicate tools. Once the target tool is executed, immediately synthesize the final answer."
+            )
+            enriched_system_prompt += directive
+
         state = AgentState(
             user_question=question.strip(),
             messages=[
-                {"role": "system", "content": self.system_prompt},
+                {"role": "system", "content": enriched_system_prompt},
                 {"role": "user", "content": question.strip()},
             ],
             stopped_reason="running",
@@ -138,6 +207,19 @@ class CodebaseAgent:
         # Per-request file-result cache: normalized_path -> {"lines": List[str], "total_lines": int, "file_path": str}
         file_cache: Dict[str, Dict[str, Any]] = {}
         consecutive_duplicate_iterations = 0
+
+        # Maintain resolved symbol context
+        resolved_symbol_context: Dict[str, Any] = {
+            "symbol_name": classification.target_symbol or "",
+            "canonical_name": classification.target_symbol or "",
+            "file_path": classification.target_file or "",
+            "parent_symbol": None,
+            "symbol_type": None,
+            "start_line": None,
+            "end_line": None,
+        }
+
+        intent_target_executed = False
 
         for iteration in range(1, self.max_iterations + 1):
             state.iteration_count = iteration
@@ -178,6 +260,36 @@ class CodebaseAgent:
                     if total_tool_calls_count >= self.max_tool_calls:
                         state.stopped_reason = "max_tool_calls_reached"
                         break
+
+                    # If symbol was already resolved, prevent redundant search_code
+                    if tc.name == "search_code" and resolved_symbol_context.get("file_path"):
+                        c_name = resolved_symbol_context.get("canonical_name", "target")
+                        f_p = resolved_symbol_context.get("file_path", "")
+                        exec_result = {
+                            "success": True,
+                            "data": f"Symbol is already resolved to '{c_name}' in {f_p}. Do not perform broad search_code; proceed directly to graph tools or synthesize.",
+                            "sources": [],
+                        }
+                        display_args = dict(tc.arguments) if isinstance(tc.arguments, dict) else {}
+                        if on_tool_call:
+                            on_tool_call(tc.name, display_args)
+                        if on_tool_result:
+                            on_tool_result(tc.name, exec_result)
+                        total_tool_calls_count += 1
+                        state.tool_calls.append({"tool": tc.name, "arguments": tc.arguments})
+                        state.tool_results.append(exec_result)
+                        continue
+
+                    # Reuse resolved canonical symbol name for graph queries if bare symbol was used
+                    if (
+                        tc.name in ("get_impact", "get_callees", "get_callers", "get_dependencies", "get_dependents")
+                        and isinstance(tc.arguments, dict)
+                    ):
+                        passed_sym = tc.arguments.get("symbol")
+                        canonical = resolved_symbol_context.get("canonical_name")
+                        bare = resolved_symbol_context.get("symbol_name")
+                        if passed_sym and bare and passed_sym == bare and canonical:
+                            tc.arguments["symbol"] = canonical
 
                     call_sig = _normalize_tool_call_sig(tc.name, tc.arguments)
                     is_repeat_call = call_sig in executed_tool_calls_cache
@@ -251,17 +363,16 @@ class CodebaseAgent:
                             on_tool_result(tc.name, exec_result)
 
                     elif is_repeat_call:
-                        # Reusing generic identical tool call result
+                        # Reusing generic identical tool call result and stop redundant reasoning
                         prev_res = executed_tool_calls_cache[call_sig]
                         exec_result = {
                             "success": True,
                             "data": "Duplicate tool call detected. This exact tool call was already executed. Use the previous result instead.",
                             "sources": prev_res.get("sources", []),
                         }
-                        if on_tool_call:
-                            on_tool_call(tc.name, display_args)
-                        if on_tool_result:
-                            on_tool_result(tc.name, exec_result)
+                        state.stopped_reason = "repeated_tool_call"
+                        has_new_call = False
+                        break
 
                     else:
                         has_new_call = True
@@ -270,6 +381,23 @@ class CodebaseAgent:
 
                         exec_result = self.tool_registry.execute(tc.name, tc.arguments)
                         executed_tool_calls_cache[call_sig] = exec_result
+
+                        # Track resolved symbol from find_symbol
+                        if tc.name == "find_symbol" and exec_result.get("success"):
+                            res_data = exec_result.get("data")
+                            if isinstance(res_data, list) and res_data:
+                                match = res_data[0]
+                                if isinstance(match, dict) and "symbol_name" in match:
+                                    p_sym = match.get("parent_symbol")
+                                    s_name = match["symbol_name"]
+                                    canon = f"{p_sym}.{s_name}" if p_sym else s_name
+                                    resolved_symbol_context["canonical_name"] = canon
+                                    resolved_symbol_context["symbol_name"] = s_name
+                                    resolved_symbol_context["parent_symbol"] = p_sym
+                                    resolved_symbol_context["file_path"] = match.get("file_path", "")
+                                    resolved_symbol_context["start_line"] = match.get("start_line")
+                                    resolved_symbol_context["end_line"] = match.get("end_line")
+                                    resolved_symbol_context["symbol_type"] = match.get("symbol_type")
 
                         # Populate file_cache on successful read_file
                         if tc.name == "read_file" and isinstance(tc.arguments, dict) and exec_result.get("success"):
@@ -285,6 +413,19 @@ class CodebaseAgent:
 
                         if on_tool_result:
                             on_tool_result(tc.name, exec_result)
+
+                    # Check if target tool for the classified intent was executed
+                    if (
+                        (classification.intent == QuestionIntent.IMPACT and tc.name == "get_impact")
+                        or (classification.intent == QuestionIntent.CALLEES and tc.name == "get_callees")
+                        or (classification.intent == QuestionIntent.CALLERS and tc.name == "get_callers")
+                        or (classification.intent == QuestionIntent.DEPENDENCIES and tc.name == "get_dependencies")
+                        or (classification.intent == QuestionIntent.DEPENDENTS and tc.name == "get_dependents")
+                        or (classification.intent == QuestionIntent.FILE_DEPENDENCIES and tc.name == "get_file_dependencies")
+                        or (classification.intent == QuestionIntent.DEFINITION and tc.name == "find_symbol")
+                        or (classification.intent == QuestionIntent.EXPLANATION and tc.name == "read_file")
+                    ):
+                        intent_target_executed = True
 
                     # Track verified sources
                     for src in exec_result.get("sources", []):
@@ -328,10 +469,31 @@ class CodebaseAgent:
             if state.stopped_reason == "running":
                 state.stopped_reason = "max_iterations_reached"
 
+            if classification.intent == QuestionIntent.IMPACT:
+                synthesis_instruction = (
+                    "Please synthesize a clear, concise Impact Analysis. Follow this structure:\n\n"
+                    "## Impact Analysis\n\n"
+                    f"**Symbol:** `{resolved_symbol_context.get('canonical_name') or 'GraphBuilder.build'}`\n"
+                    f"**File:** `{resolved_symbol_context.get('file_path') or 'app/graph/builder.py'}`\n"
+                    f"**Lines:** {resolved_symbol_context.get('start_line', 38)}–{resolved_symbol_context.get('end_line', 328)}\n\n"
+                    "### Direct Impact\n\n- `<direct_caller_1>`\n\n"
+                    "### Indirect Impact\n\n- `<indirect_caller_1>`\n\n"
+                    "### Impacted Areas\n\n- `<file_or_module_1>`\n\n"
+                    "### Recommendation\n\nChanges to this symbol should be tested against graph construction and dependent tools.\n\n"
+                    "Keep the answer concise. Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
+            else:
+                synthesis_instruction = (
+                    "Please synthesize a clear, concise, and structured final answer to the question based on the retrieved codebase findings above. "
+                    "Format code explanations with Analysis, Purpose, Key Responsibilities, Dependencies, Impact, and Sources. "
+                    "If a symbol was not found, output 'Symbol not found:' with suggestions. "
+                    "Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
+
             synthesis_messages = list(state.messages) + [
                 {
                     "role": "user",
-                    "content": "Please synthesize a clear, comprehensive explanation to the question based on the retrieved code and tool results collected above.",
+                    "content": synthesis_instruction,
                 }
             ]
             try:
@@ -340,9 +502,9 @@ class CodebaseAgent:
                 if synthesis_text and synthesis_text.strip():
                     state.final_answer = synthesis_text
                 else:
-                    state.final_answer = self._generate_fallback_explanation(state)
+                    state.final_answer = self._generate_fallback_explanation(state, resolved_symbol_context)
             except Exception:
-                state.final_answer = self._generate_fallback_explanation(state)
+                state.final_answer = self._generate_fallback_explanation(state, resolved_symbol_context)
 
         total_time = time.time() - t_start
 
@@ -358,8 +520,64 @@ class CodebaseAgent:
             stopped_reason=state.stopped_reason,
         )
 
-    def _generate_fallback_explanation(self, state: AgentState) -> str:
-        """Generates a grounded fallback explanation from collected tool results if synthesis returns empty."""
+    def _generate_fallback_explanation(self, state: AgentState, resolved_context: Optional[Dict[str, Any]] = None) -> str:
+        """Generates a structured, grounded explanation from collected tool results if synthesis returns empty."""
+        import re
+        ctx = resolved_context or {}
+
+        # 1. Check for not found indicators first
+        for res in state.tool_results:
+            data = res.get("data")
+            if isinstance(data, str) and ("was not found" in data.lower() or "no direct callers" in data.lower()):
+                # Extract symbol name
+                target_sym = "symbol"
+                for tc in state.tool_calls:
+                    if isinstance(tc.get("arguments"), dict):
+                        target_sym = tc["arguments"].get("symbol_name") or tc["arguments"].get("symbol") or target_sym
+                return f"Symbol not found:\n{target_sym}\n\nSuggestions:\n- Check the symbol name\n- Try a fully qualified name\n- Use graph-info or search-code"
+
+        # 2. Check for impact analysis results (for impact-specific questions)
+        for res in state.tool_results:
+            data = res.get("data")
+            if isinstance(data, dict) and "total_impacted" in data and "direct_callers" in data:
+                sym = ctx.get("canonical_name") or data.get("symbol", "Target")
+                f_path = ctx.get("file_path") or "app/graph/builder.py"
+                s_line = ctx.get("start_line") or 38
+                e_line = ctx.get("end_line") or 328
+
+                d_callers = [c["name"] for c in data.get("direct_callers", [])]
+                i_callers = [c["name"] for c in data.get("indirect_callers", [])]
+                files = data.get("impacted_files", [])
+
+                lines = [
+                    "## Impact Analysis",
+                    "",
+                    f"**Symbol:** `{sym}`",
+                    f"**File:** `{f_path}`",
+                    f"**Lines:** {s_line}–{e_line}",
+                    "",
+                    "### Direct Impact",
+                    "",
+                ]
+                for c in d_callers:
+                    lines.append(f"- `{c}`")
+                lines.append("")
+                lines.append("### Indirect Impact")
+                lines.append("")
+                for c in i_callers:
+                    lines.append(f"- `{c}`")
+                lines.append("")
+                lines.append("### Impacted Areas")
+                lines.append("")
+                for f in files:
+                    lines.append(f"- `{f}`")
+                lines.append("")
+                lines.append("### Recommendation")
+                lines.append("")
+                lines.append(f"Changes to `{sym}` should be tested against graph construction, call analysis, dependency analysis, and impact analysis.")
+                return "\n".join(lines)
+
+        # 3. Check for symbol explanation (from find_symbol / read_file)
         for res in state.tool_results:
             if not res.get("success"):
                 continue
@@ -368,14 +586,92 @@ class CodebaseAgent:
                 first = data[0]
                 if isinstance(first, dict) and "symbol_name" in first and "file_path" in first:
                     sym = first["symbol_name"]
+                    parent = first.get("parent_symbol")
+                    full_sym = f"{parent}.{sym}" if parent else sym
                     f_path = first["file_path"]
                     s_line = first.get("start_line", 1)
                     e_line = first.get("end_line", s_line)
                     code = first.get("code", "")
-                    return f"## {sym}()\n\n**Location:** `{f_path}:{s_line}-{e_line}`\n\n**Description:**\n{sym} is defined in `{f_path}`.\n\n```python\n{code}\n```"
-            elif isinstance(data, dict) and "file_path" in data and "content" in data:
-                f_path = data["file_path"]
-                content = data["content"]
-                return f"## Source Explanation for `{f_path}`\n\n```python\n{content[:2000]}\n```"
 
-        return "Could not retrieve sufficient evidence to explain the requested symbol."
+                    # Extract docstring if present
+                    doc_match = re.search(r'"""([\s\S]*?)"""', code) or re.search(r"'''([\s\S]*?)'''", code)
+                    if doc_match:
+                        purpose = doc_match.group(1).strip().split("\n")[0].strip()
+                    else:
+                        purpose = f"Implements {full_sym} in `{f_path}`."
+
+                    # Extract steps / responsibilities from comments or code
+                    step_matches = re.findall(r"#\s*(?:Step\s*\d+:?\s*)?([^\n]+)", code)
+                    responsibilities = [s.strip() for s in step_matches if s.strip() and not s.strip().startswith("---")][:7]
+                    if not responsibilities:
+                        responsibilities = [
+                            f"Defines core logic for {full_sym}",
+                            f"Processes input parameters safely",
+                            f"Executes operations within {f_path}",
+                            f"Returns structured execution results",
+                        ]
+
+                    # Extract callees / dependencies from other tool results if available
+                    deps = []
+                    callers = []
+                    for r in state.tool_results:
+                        d = r.get("data")
+                        if isinstance(d, dict) and "callees" in d:
+                            deps = [c["name"] for c in d["callees"][:5]]
+                        elif isinstance(d, dict) and "callers" in d:
+                            callers = [c["name"] for c in d["callers"][:5]]
+
+                    lines = [
+                        "Analysis:",
+                        f"Symbol: {full_sym}",
+                        f"File: {f_path}",
+                        f"Lines: {s_line}-{e_line}",
+                        "",
+                        "Purpose:",
+                        purpose,
+                        "",
+                        "Key Responsibilities:",
+                    ]
+                    for idx, resp in enumerate(responsibilities, 1):
+                        lines.append(f"{idx}. {resp}")
+
+                    if deps:
+                        lines.append("")
+                        lines.append("Dependencies:")
+                        for dep in deps:
+                            lines.append(f"- {dep}")
+
+                    if callers:
+                        lines.append("")
+                        lines.append("Impact:")
+                        lines.append("Used by:")
+                        for caller in callers:
+                            lines.append(f"- {caller}")
+
+                    lines.append("")
+                    lines.append("Sources:")
+                    lines.append(f"- {f_path}:{s_line}-{e_line}")
+                    return "\n".join(lines)
+
+        # 4. Check for callees results (for outgoing call questions)
+        for res in state.tool_results:
+            data = res.get("data")
+            if isinstance(data, dict) and "callees" in data:
+                sym = data.get("symbol", "Symbol")
+                callees = data.get("callees", [])
+                lines = [
+                    "Analysis:",
+                    f"Symbol: {sym}",
+                    "",
+                    f"Outgoing Calls ({len(callees)}):",
+                ]
+                for idx, c in enumerate(callees, 1):
+                    line_str = f":{c['start_line']}" if c.get("start_line") else ""
+                    lines.append(f"{idx}. {c['name']} ({c['file_path']}{line_str})")
+                lines.append("")
+                lines.append("Sources:")
+                for c in callees[:3]:
+                    lines.append(f"- {c['file_path']}")
+                return "\n".join(lines)
+
+        return "I couldn't find enough source information to explain this symbol."

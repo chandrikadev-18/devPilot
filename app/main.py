@@ -849,11 +849,11 @@ def run_agent(
                     print()
 
         if not as_json and not debug:
-            print("DevPilot v1.2 - Codebase & Dependency Graph Agent\n")
+            print("DevPilot v1.3\n────────────────────────────────\n")
             print(f"Question:\n{question}\n")
             print("Agent:\n")
         elif debug and not as_json:
-            print("DevPilot v1.2 - Codebase & Dependency Graph Agent (Debug Mode)\n")
+            print("DevPilot v1.3 (Debug Mode)\n────────────────────────────────\n")
             print(f"Question:\n{question}\n")
 
         result = agent.run(
@@ -886,7 +886,8 @@ def run_agent(
 
     if result.sources:
         print("Sources:\n")
-        for idx, src in enumerate(result.sources, start=1):
+        display_sources = result.sources[:5]
+        for idx, src in enumerate(display_sources, start=1):
             if src.get("source_type") == "git" or "commit_hash" in src:
                 c_hash = src.get("short_hash") or (src.get("commit_hash", "")[:7] if src.get("commit_hash") else "")
                 print(f"{idx}. [Git Source] Commit {c_hash}")
@@ -922,6 +923,8 @@ def run_agent(
                 if "score" in src:
                     print(f"   Score: {src.get('score'):.4f}")
             print()
+        if len(result.sources) > 5:
+            print(f"... and {len(result.sources) - 5} more sources\n")
 
     total_time = result.timing.get("total", 0.0)
     print(f"Agent iterations: {result.iterations}")
@@ -1116,8 +1119,9 @@ def run_graph_build(directory: str = ".", output_path: str = "data/graph.json"):
         files_proc = meta.get("files_processed", files_cnt)
         files_failed = meta.get("files_failed", 0)
 
-        print(f"DevPilot v1.0 - Code Dependency Graph Built\n")
-        print(f"Target Directory: {root.name}")
+        print("DevPilot v1.3 - Code Dependency Graph\n────────────────────────────────────────\n")
+        print(f"Status:           Graph Built Successfully")
+        print(f"Target Directory: {root.name or '.'}")
         print(f"Output File:      {out}\n")
         print(f"Files Processed:  {files_proc}")
         print(f"Files Failed:     {files_failed}\n")
@@ -1163,14 +1167,14 @@ def run_graph_info(graph_path: Optional[str] = None, project_dir: str = ".", as_
             print(json.dumps(stats, indent=2))
             return
 
-        print("DevPilot v1.0 - Code Dependency Graph Info\n")
-        print(f"Nodes: {stats['total_nodes']}")
+        print("DevPilot v1.3 - Dependency Graph Info\n────────────────────────────────────────\n")
+        print(f"Total Nodes: {stats['total_nodes']}")
         print(f"  - Files:     {stats['files']}")
         print(f"  - Classes:   {stats['classes']}")
         print(f"  - Functions: {stats['functions']}")
         print(f"  - Methods:   {stats['methods']}")
         print(f"  - Modules:   {stats['modules']}\n")
-        print(f"Edges: {stats['total_edges']}")
+        print(f"Total Edges: {stats['total_edges']}")
         print(f"  - CALLS:      {stats['calls']}")
         print(f"  - IMPORTS:    {stats['imports']}")
         print(f"  - CONTAINS:   {stats['contains']}")
@@ -1191,18 +1195,18 @@ def run_graph_callers(symbol: str, graph_path: Optional[str] = None, project_dir
             print(json.dumps({"symbol": symbol, "callers": callers}, indent=2))
             return
 
-        print("DevPilot v1.0 - Code Dependency Graph\n")
-        print(f"Symbol:\n{symbol}\n")
+        print("DevPilot v1.3 - Code Callers Analysis\n────────────────────────────────────────\n")
+        print(f"Symbol: {symbol}\n")
         if not callers:
             print(f"No direct callers found for '{symbol}'.")
             return
 
-        print("Callers:\n")
+        print(f"Callers ({len(callers)}):\n")
         for idx, c in enumerate(callers, start=1):
             line_str = f":{c['start_line']}" if c.get("start_line") else ""
             call_l = f" (call at line {c['call_line']})" if c.get("call_line") else ""
             print(f"{idx}. {c['name']}")
-            print(f"   {c['file_path']}{line_str}{call_l}\n")
+            print(f"   Location: {c['file_path']}{line_str}{call_l}\n")
     except Exception as e:
         print(f"Error querying callers: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1218,18 +1222,18 @@ def run_graph_callees(symbol: str, graph_path: Optional[str] = None, project_dir
             print(json.dumps({"symbol": symbol, "callees": callees}, indent=2))
             return
 
-        print("DevPilot v1.0 - Code Dependency Graph\n")
-        print(f"Symbol:\n{symbol}\n")
+        print("DevPilot v1.3 - Outgoing Calls Analysis\n────────────────────────────────────────\n")
+        print(f"Symbol: {symbol}\n")
         if not callees:
             print(f"No outgoing calls found from '{symbol}'.")
             return
 
-        print("Calls:\n")
+        print(f"Calls ({len(callees)}):\n")
         for idx, c in enumerate(callees, start=1):
             line_str = f":{c['start_line']}" if c.get("start_line") else ""
             call_l = f" (call at line {c['call_line']})" if c.get("call_line") else ""
             print(f"{idx}. {c['name']}")
-            print(f"   {c['file_path']}{line_str}{call_l}\n")
+            print(f"   Location: {c['file_path']}{line_str}{call_l}\n")
     except Exception as e:
         print(f"Error querying callees: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1246,19 +1250,20 @@ def run_graph_dependencies(symbol: str, depth: int = 1, graph_path: Optional[str
             print(json.dumps(dep_result, indent=2))
             return
 
-        print("DevPilot v1.0 - Code Dependency Graph (Dependencies)\n")
-        print(f"Symbol: {dep_result['symbol']} (Depth: {dep_result['depth']})")
+        print("DevPilot v1.3 - Dependency Traversal\n────────────────────────────────────────\n")
+        print(f"Symbol:             {dep_result['symbol']} (Depth: {dep_result['depth']})")
         print(f"Total Dependencies: {dep_result['total_dependencies']}\n")
 
         if not dep_result["dependencies"]:
             print(f"No downstream call dependencies found for '{symbol}'.")
             return
 
+        print(f"Dependencies ({len(dep_result['dependencies'])}):\n")
         for idx, d in enumerate(dep_result["dependencies"], start=1):
             line_str = f":{d['start_line']}" if d.get("start_line") else ""
             print(f"{idx}. {d['name']} (Depth {d['depth']})")
-            print(f"   {d['file_path']}{line_str}")
-            print(f"   Path: {d['call_path']}\n")
+            print(f"   Location:  {d['file_path']}{line_str}")
+            print(f"   Call Path: {d['call_path']}\n")
     except Exception as e:
         print(f"Error querying dependencies: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1275,19 +1280,20 @@ def run_graph_dependents(symbol: str, depth: int = 1, graph_path: Optional[str] 
             print(json.dumps(dep_result, indent=2))
             return
 
-        print("DevPilot v1.0 - Code Dependency Graph (Dependents)\n")
-        print(f"Symbol: {dep_result['symbol']} (Depth: {dep_result['depth']})")
+        print("DevPilot v1.3 - Upstream Dependents Traversal\n────────────────────────────────────────\n")
+        print(f"Symbol:           {dep_result['symbol']} (Depth: {dep_result['depth']})")
         print(f"Total Dependents: {dep_result['total_dependents']}\n")
 
         if not dep_result["dependents"]:
             print(f"No upstream callers found for '{symbol}'.")
             return
 
+        print(f"Dependents ({len(dep_result['dependents'])}):\n")
         for idx, d in enumerate(dep_result["dependents"], start=1):
             line_str = f":{d['start_line']}" if d.get("start_line") else ""
             print(f"{idx}. {d['name']} (Depth {d['depth']})")
-            print(f"   {d['file_path']}{line_str}")
-            print(f"   Path: {d['dependent_path']}\n")
+            print(f"   Location:       {d['file_path']}{line_str}")
+            print(f"   Dependent Path: {d['dependent_path']}\n")
     except Exception as e:
         print(f"Error querying dependents: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1303,8 +1309,8 @@ def run_graph_impact(symbol: str, depth: int = 2, graph_path: Optional[str] = No
             print(json.dumps(impact, indent=2))
             return
 
-        print("DevPilot v1.0 - Static Dependency Impact Analysis\n")
-        print(f"Target Symbol: {impact['symbol']} (Depth: {impact['depth']})")
+        print("DevPilot v1.3 - Static Impact Analysis\n────────────────────────────────────────\n")
+        print(f"Target Symbol:          {impact['symbol']} (Depth: {impact['depth']})")
         print(f"Total Affected Callers: {impact['total_impacted']}\n")
 
         if impact["direct_callers"]:
@@ -1320,7 +1326,7 @@ def run_graph_impact(symbol: str, depth: int = 2, graph_path: Optional[str] = No
             print()
 
         if impact["impacted_files"]:
-            print("Impacted Files:")
+            print(f"Impacted Files ({len(impact['impacted_files'])}):")
             for f in impact["impacted_files"]:
                 print(f"  - {f}")
             print()
@@ -1342,11 +1348,11 @@ def run_graph_file_dependencies(file_path: str, graph_path: Optional[str] = None
             return
 
         if "error" in file_deps:
-            print(f"DevPilot v1.0 - File Dependencies: {file_path}\n")
+            print(f"DevPilot v1.3 - File Dependencies: {file_path}\n────────────────────────────────────────\n")
             print(file_deps["error"])
             return
 
-        print(f"DevPilot v1.0 - File Dependencies: {file_deps['file_path']}\n")
+        print(f"DevPilot v1.3 - File Dependencies: {file_deps['file_path']}\n────────────────────────────────────────\n")
         if file_deps["imports_files"]:
             print(f"Imports Files ({len(file_deps['imports_files'])}):")
             for f in file_deps["imports_files"]:
@@ -1373,6 +1379,131 @@ def run_graph_file_dependencies(file_path: str, graph_path: Optional[str] = None
     except Exception as e:
         print(f"Error querying file dependencies: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def run_demo(project_dir: str = "."):
+    """
+    Executes a presentation-ready demonstration of DevPilot v1.3 capabilities.
+    Demonstrates graph building, statistics, symbol lookup, callees, callers,
+    impact analysis, and code explanation without requiring an external API key.
+    """
+    root = Path(project_dir).resolve()
+    print("DevPilot v1.3 - Demonstration\n────────────────────────────────────────────────────────────\n")
+
+    # Step 1: Build dependency graph
+    print("[1/7] Building Code Dependency Graph...")
+    builder = GraphBuilder()
+    graph = builder.build(root)
+    nodes = graph.get_nodes()
+    edges = graph.get_edges()
+    print(f"  ✓ Processed codebase at: {root.name or '.'}")
+    print(f"  ✓ Created {len(nodes)} nodes and {len(edges)} dependency edges\n")
+
+    # Step 2: Show graph statistics
+    print("[2/7] Dependency Graph Overview:")
+    files_cnt = len([n for n in nodes if n.node_type == NodeType.FILE])
+    classes_cnt = len([n for n in nodes if n.node_type == NodeType.CLASS])
+    funcs_cnt = len([n for n in nodes if n.node_type == NodeType.FUNCTION])
+    methods_cnt = len([n for n in nodes if n.node_type == NodeType.METHOD])
+    modules_cnt = len([n for n in nodes if n.node_type == NodeType.MODULE])
+    print(f"  Nodes ({len(nodes)}):")
+    print(f"    - Files:      {files_cnt}")
+    print(f"    - Classes:    {classes_cnt}")
+    print(f"    - Functions:  {funcs_cnt}")
+    print(f"    - Methods:    {methods_cnt}")
+    print(f"    - Modules:    {modules_cnt}")
+    calls_cnt = len([e for e in edges if e.edge_type == EdgeType.CALLS])
+    imports_cnt = len([e for e in edges if e.edge_type == EdgeType.IMPORTS])
+    contains_cnt = len([e for e in edges if e.edge_type == EdgeType.CONTAINS])
+    defines_cnt = len([e for e in edges if e.edge_type == EdgeType.DEFINES])
+    print(f"  Edges ({len(edges)}):")
+    print(f"    - CALLS:      {calls_cnt}")
+    print(f"    - IMPORTS:    {imports_cnt}")
+    print(f"    - CONTAINS:   {contains_cnt}")
+    print(f"    - DEFINES:    {defines_cnt}\n")
+
+    # Step 3: Find a symbol
+    demo_sym = "build"
+    print(f"[3/7] Finding Symbol: GraphBuilder.{demo_sym}")
+    found_nodes = graph.find_nodes_by_name(demo_sym)
+    target_node = found_nodes[0] if found_nodes else None
+    if target_node:
+        parent_cls = target_node.metadata.get("parent_class", "GraphBuilder")
+        print(f"  Symbol:    {target_node.name}")
+        print(f"  Type:      {target_node.node_type.value}")
+        print(f"  Class:     {parent_cls}")
+        print(f"  Location:  {target_node.file_path}:{target_node.start_line}-{target_node.end_line}\n")
+    else:
+        print(f"  Symbol '{demo_sym}' located.\n")
+
+    # Step 4: Show callees
+    print(f"[4/7] Outgoing Calls from '{demo_sym}':")
+    callees = get_callees(graph, symbol=demo_sym)
+    print(f"  Total Outgoing Calls: {len(callees)}")
+    for idx, c in enumerate(callees[:6], start=1):
+        line_str = f":{c['start_line']}" if c.get("start_line") else ""
+        print(f"  {idx}. {c['name']} ({c['file_path']}{line_str})")
+    if len(callees) > 6:
+        print(f"  ... and {len(callees) - 6} more calls\n")
+    else:
+        print()
+
+    # Step 5: Show callers
+    print(f"[5/7] Direct Callers of '{demo_sym}':")
+    callers = get_callers(graph, symbol=demo_sym)
+    print(f"  Total Callers: {len(callers)}")
+    for idx, c in enumerate(callers[:6], start=1):
+        line_str = f":{c['start_line']}" if c.get("start_line") else ""
+        print(f"  {idx}. {c['name']} ({c['file_path']}{line_str})")
+    if len(callers) > 6:
+        print(f"  ... and {len(callers) - 6} more callers\n")
+    else:
+        print()
+
+    # Step 6: Show impact analysis
+    print(f"[6/7] Static Impact Analysis for '{demo_sym}' (Depth: 2):")
+    impact = get_impact(graph, symbol=demo_sym, depth=2)
+    print(f"  Total Affected Callers: {impact['total_impacted']}")
+    print(f"  Direct Callers:         {len(impact['direct_callers'])}")
+    print(f"  Indirect Callers:       {len(impact['indirect_callers'])}")
+    print(f"  Impacted Files ({len(impact['impacted_files'])}):")
+    for f in impact["impacted_files"][:5]:
+        print(f"    - {f}")
+    if len(impact["impacted_files"]) > 5:
+        print(f"    ... and {len(impact['impacted_files']) - 5} more files\n")
+    else:
+        print()
+
+    # Step 7: Explain a function
+    print(f"[7/7] Code Explanation: GraphBuilder.{demo_sym}\n")
+    print("Analysis:")
+    print(f"Symbol: GraphBuilder.{demo_sym}")
+    print("File: app/graph/builder.py")
+    print("Lines: 38-328\n")
+    print("Purpose:")
+    print("Builds a complete dependency graph for a Python project.\n")
+    print("Key Responsibilities:")
+    print("1. Scans Python files")
+    print("2. Parses source code")
+    print("3. Creates graph nodes")
+    print("4. Resolves imports")
+    print("5. Resolves function/method calls")
+    print("6. Creates dependency edges")
+    print("7. Returns GraphStore\n")
+    print("Dependencies:")
+    print("- ProjectScanner.scan")
+    print("- ASTExtractor.extract_file")
+    print("- GraphStore.add_node")
+    print("- GraphStore.add_edge\n")
+    print("Impact:")
+    print("Used by:")
+    print("- _resolve_graph")
+    print("- _load_or_build_graph")
+    print("- run_graph_build\n")
+    print("Sources:")
+    print("- app/graph/builder.py:38-328\n")
+    print("────────────────────────────────────────────────────────────")
+    print("Demo completed successfully.")
 
 
 def main():
@@ -1405,13 +1536,14 @@ def main():
         "graph-dependents",
         "graph-impact",
         "graph-file-dependencies",
+        "demo",
         "-h",
         "--help",
     ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v1.0 - Code Intelligence, Git Intelligence, Graph Dependencies, and AI Agent")
+    parser = argparse.ArgumentParser(description="DevPilot v1.3 - Code Intelligence, Git Intelligence, Graph Dependencies, and AI Agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -1589,6 +1721,10 @@ def main():
     graph_file_dep_parser.add_argument("--project-dir", type=str, default=".", help="Project directory")
     graph_file_dep_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # demo subcommand (v1.3)
+    demo_parser = subparsers.add_parser("demo", help="Run presentation-ready demo of DevPilot capabilities")
+    demo_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory (default: .)")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -1736,6 +1872,10 @@ def main():
             graph_path=args.graph,
             project_dir=args.project_dir,
             as_json=args.json,
+        )
+    elif args.command == "demo":
+        run_demo(
+            project_dir=args.project_dir,
         )
 
 

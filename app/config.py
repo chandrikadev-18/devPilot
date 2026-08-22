@@ -122,13 +122,13 @@ def get_max_agent_iterations() -> int:
 
 
 def get_max_tool_calls() -> int:
-    """Returns the maximum number of total tool calls allowed per agent run."""
-    val = os.getenv("MAX_TOOL_CALLS", "10")
+    """Returns the maximum number of total tool calls allowed per agent run (default: 4)."""
+    val = os.getenv("MAX_TOOL_CALLS", "4")
     try:
         parsed = int(val)
         return max(1, parsed)
     except ValueError:
-        return 10
+        return 4
 
 
 def get_max_tool_result_characters() -> int:
