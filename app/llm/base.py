@@ -19,16 +19,16 @@ def strip_thinking_and_tool_tags(text: Optional[str]) -> str:
     cleaned = text
     # Strip complete <think>...</think> blocks
     cleaned = re.sub(r"<think>[\s\S]*?</think>", "", cleaned, flags=re.IGNORECASE)
-    # Strip unclosed <think>... blocks
-    cleaned = re.sub(r"<think>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
     # Strip complete <tool_call>...</tool_call> blocks
     cleaned = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", cleaned, flags=re.IGNORECASE)
-    # Strip unclosed <tool_call>... blocks
-    cleaned = re.sub(r"<tool_call>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
     # Strip function / parameter xml tags
     cleaned = re.sub(r"<function=[^>]*>[\s\S]*?</function>", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"<parameter=[^>]*>[\s\S]*?</parameter>", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"</?(?:think|tool_call|function|parameter)[^>]*>", "", cleaned, flags=re.IGNORECASE)
+    if "<think>" in cleaned.lower():
+        cleaned = re.sub(r"<think>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
+    if "<tool_call>" in cleaned.lower():
+        cleaned = re.sub(r"<tool_call>[\s\S]*$", "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
 

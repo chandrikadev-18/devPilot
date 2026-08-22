@@ -7,7 +7,8 @@ and source citation tracking for codebase exploration.
 
 import json
 import time
-from typing import Any, Callable, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.agent.state import AgentResult, AgentState
 from app.agent.tool_registry import ToolRegistry
@@ -19,29 +20,39 @@ from app.config import (
 from app.llm import strip_thinking_and_tool_tags
 from app.llm.base import LLMProvider
 
-DEFAULT_AGENT_SYSTEM_PROMPT = """You are DevPilot, an advanced codebase, Git, and Dependency Graph analysis agent.
 
-You have access to read-only tools to inspect the repository code, Git history, and Dependency Graph.
+def _normalize_path_key(p: str) -> str:
+    """Normalizes a file path for cache lookups."""
+    if not p:
+        return ""
+    norm = p.replace("\\", "/").strip().lower()
+    while norm.startswith("./"):
+        norm = norm[2:]
+    return norm
 
-Available tools include:
-- search_code: semantic search across indexed codebase chunks
-- read_file: read text contents or specific line ranges of a project file
-- find_symbol: locate function, class, or method definitions by name or qualified path
-- get_file_structure: inspect AST structure (classes, functions, methods, imports)
-- get_file_history: retrieve recent Git commits that modified a specific file
-- get_recent_commits: retrieve recent Git commits across the repository
-- get_last_commit: retrieve the most recent Git commit modifying a specific file
-- get_commit: retrieve detailed metadata and limited diff for a specific commit
-- get_file_blame: inspect line-by-line blame, author, commit, and date information
-- get_callers: find functions/methods that directly call a specific symbol (e.g. "What functions call X?")
-- get_callees: find functions/methods called directly by a specific symbol (e.g. "What functions does X call?")
-- get_dependencies: multi-step downstream call dependency traversal for a symbol (e.g. "What does X depend on?")
-- get_dependents: multi-step upstream reverse dependency traversal for a symbol (e.g. "What depends on X?")
-- get_impact: static impact analysis discovering all callers affected if a symbol changes (e.g. "What could be affected if X changes?")
-- get_file_dependencies: inspect module and file import relationships for a file (e.g. "What files does X depend on?")
 
-Rules:
-1. Never modify project files. All operations must be strictly read-only.
+def _normalize_tool_call_sig(name: str, args: Any) -> Tuple[str, str]:
+    """Generates a canonical signature for generic tool deduplication."""
+    if isinstance(args, dict):
+        norm_dict = {}
+        for k, v in sorted(args.items()):
+            if k == "_cache":
+                continue
+            if isinstance(v, str) and ("/" in v or "\\" in v):
+                norm_dict[k] = _normalize_path_key(v)
+            elif isinstance(v, str):
+                norm_dict[k] = v.strip().lower()
+            else:
+                norm_dict[k] = v
+        return (name, json.dumps(norm_dict, sort_keys=True))
+    return (name, str(args))
+
+
+DEFAULT_AGENT_SYSTEM_PROMPT = """You are DevPilot AI v1.2, an expert autonomous software engineer and codebase assistant.
+Your goal is to answer user questions with precision, depth, and evidence from the codebase.
+
+CRITICAL RULES:
+1. Always explore using available tools before answering.
 2. Never execute arbitrary code or shell commands.
 3. Never access secrets or files outside project boundaries.
 4. Base all explanations strictly on evidence retrieved from tools. Do not invent information. If information is unavailable, explicitly state so.
@@ -54,25 +65,26 @@ Rules:
    - "What files does <file> depend on?" or file imports: use get_file_dependencies with file_path="<file>".
    - Always choose these specialized graph tools directly for relationship/dependency questions rather than searching or finding symbols.
 6. When explaining code, functions, methods, or classes (e.g. "Explain <symbol>", "Explain the <symbol> function", "What does <symbol> do?", "How does <symbol> work?"):
-   - Step 1: Use find_symbol with symbol_name="<symbol>". This tool returns the exact symbol location (file and line numbers) and the full source code snippet.
-   - Step 2: Use the source code snippet returned by find_symbol to synthesize your explanation. You do NOT need to call read_file if find_symbol already returned the code.
-   - Step 3 (Optional): If understanding incoming/outgoing calls is helpful, call get_callees or get_callers.
-   - Step 4: Synthesize the final explanation immediately. Never call read_file or any other tool repeatedly for the same file or symbol.
+   - Step 1: ALWAYS call find_symbol with symbol_name="<symbol>" first.
+   - Step 2: If find_symbol returns an exact unique match, proceed directly with that symbol and its file. Do NOT execute broad search_code queries.
+   - Step 3: Inspect the source code by calling read_file ONCE for the file (or using the snippet in find_symbol). Do NOT call read_file repeatedly for the same file.
+   - Step 4 (Optional): If understanding caller/callee relationships is needed, call get_callees or get_callers.
+   - Step 5: Synthesize a comprehensive final explanation immediately. The entire workflow should take 2-4 tool calls.
    - Provide a well-structured explanation covering:
-     * Location (`file_path:line`)
+     * Symbol Name & Location (`file_path:line`)
      * Purpose / Overview
-     * Signature, Parameters & Return Value
-     * Main Responsibilities & Key Execution Steps
-     * Important Functions Called (Callees) & Callers (Call Hierarchy)
-     * Important Classes / Types Used & Dependencies
+     * Signature, Parameters & Return Value (when visible)
+     * Main Execution Steps & Implementation Details
+     * Important Functions/Methods Called (Callees) & Callers
+     * Classes / Types Used & Dependencies
      * Side Effects & Error Handling (if visible)
      * Testing Considerations (how to test, mocks, edge cases)
 7. When investigating "when" or "why" a function/file changed:
-   - Locate the symbol or file using search_code / find_symbol / read_file.
+   - Locate the symbol or file using find_symbol / read_file.
    - Query Git history with get_file_history, get_last_commit, get_file_blame, or get_commit.
    - Base reasons on commit messages and diff evidence. Use phrases like "The commit message indicates..." or "The diff suggests...". Do not invent developer intentions.
 8. Clearly distinguish Code sources, Git sources, and Graph sources.
-9. Stop when enough evidence has been collected to give a complete, grounded answer. Do not repeat the same tool calls.
+9. Stop when enough evidence has been collected to give a complete, grounded answer. Avoid redundant tool calls.
 """
 
 
@@ -123,7 +135,8 @@ class CodebaseAgent:
 
         total_tool_calls_count = 0
         executed_tool_calls_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
-        executed_file_reads: Dict[str, List[Tuple[Optional[int], Optional[int]]]] = {}
+        # Per-request file-result cache: normalized_path -> {"lines": List[str], "total_lines": int, "file_path": str}
+        file_cache: Dict[str, Dict[str, Any]] = {}
         consecutive_duplicate_iterations = 0
 
         for iteration in range(1, self.max_iterations + 1):
@@ -166,24 +179,21 @@ class CodebaseAgent:
                         state.stopped_reason = "max_tool_calls_reached"
                         break
 
-                    args_json = json.dumps(tc.arguments, sort_keys=True) if isinstance(tc.arguments, dict) else str(tc.arguments)
-                    call_sig = (tc.name, args_json)
-                    is_repeat = call_sig in executed_tool_calls_cache
+                    call_sig = _normalize_tool_call_sig(tc.name, tc.arguments)
+                    is_repeat_call = call_sig in executed_tool_calls_cache
 
-                    is_redundant_read = False
-                    if not is_repeat and tc.name == "read_file" and isinstance(tc.arguments, dict):
+                    # Check read_file specific caching
+                    is_file_cache_hit = False
+                    f_path = ""
+                    s_line = None
+                    e_line = None
+                    if tc.name == "read_file" and isinstance(tc.arguments, dict):
                         f_path = tc.arguments.get("file_path", "")
+                        norm_p = _normalize_path_key(f_path)
                         s_line = tc.arguments.get("start_line")
                         e_line = tc.arguments.get("end_line")
-                        if f_path in executed_file_reads:
-                            for prev_s, prev_e in executed_file_reads[f_path]:
-                                if prev_s is None and prev_e is None:
-                                    is_redundant_read = True
-                                    break
-                                if s_line is not None and e_line is not None and prev_s is not None and prev_e is not None:
-                                    if prev_s <= s_line and prev_e >= e_line:
-                                        is_redundant_read = True
-                                        break
+                        if norm_p in file_cache:
+                            is_file_cache_hit = True
 
                     total_tool_calls_count += 1
                     call_record = {
@@ -192,34 +202,86 @@ class CodebaseAgent:
                     }
                     state.tool_calls.append(call_record)
 
-                    if is_repeat:
+                    # Prepare display arguments with Cache indicator
+                    display_args = dict(tc.arguments) if isinstance(tc.arguments, dict) else {}
+                    if tc.name == "read_file":
+                        display_args["_cache"] = "HIT" if (is_file_cache_hit or is_repeat_call) else "MISS"
+
+                    if is_file_cache_hit and not is_repeat_call:
+                        # Serve from request-scoped file_cache
+                        norm_p = _normalize_path_key(f_path)
+                        cached_entry = file_cache[norm_p]
+                        c_lines = cached_entry["lines"]
+                        t_lines = cached_entry["total_lines"]
+                        s_idx = max(1, s_line) if s_line is not None else 1
+                        e_idx = min(t_lines, e_line) if e_line is not None else t_lines
+                        if s_idx > e_idx:
+                            s_idx = e_idx
+                        sliced_content = "\n".join(c_lines[s_idx - 1 : e_idx])
+                        max_chars = get_max_tool_result_characters()
+                        truncated = False
+                        if len(sliced_content) > max_chars:
+                            sliced_content = sliced_content[:max_chars].rstrip() + "\n\n[File truncated due to size limit]"
+                            truncated = True
+
+                        exec_result = {
+                            "success": True,
+                            "data": {
+                                "file_path": f_path,
+                                "lines": t_lines,
+                                "start_line": s_idx,
+                                "end_line": e_idx,
+                                "truncated": truncated,
+                                "content": sliced_content,
+                                "cached": True,
+                            },
+                            "sources": [{
+                                "file_path": f_path,
+                                "symbol_name": Path(f_path).name,
+                                "symbol_type": "file",
+                                "start_line": s_idx,
+                                "end_line": e_idx,
+                            }],
+                        }
+                        executed_tool_calls_cache[call_sig] = exec_result
+
+                        if on_tool_call:
+                            on_tool_call(tc.name, display_args)
+                        if on_tool_result:
+                            on_tool_result(tc.name, exec_result)
+
+                    elif is_repeat_call:
+                        # Reusing generic identical tool call result
                         prev_res = executed_tool_calls_cache[call_sig]
                         exec_result = {
                             "success": True,
                             "data": "Duplicate tool call detected. This exact tool call was already executed. Use the previous result instead.",
                             "sources": prev_res.get("sources", []),
                         }
-                    elif is_redundant_read:
-                        exec_result = {
-                            "success": True,
-                            "data": f"Duplicate tool call detected. The content of '{tc.arguments.get('file_path')}' is already available in previous tool results in conversation history. Please use the results already present in the conversation history.",
-                            "sources": [],
-                        }
+                        if on_tool_call:
+                            on_tool_call(tc.name, display_args)
+                        if on_tool_result:
+                            on_tool_result(tc.name, exec_result)
+
                     else:
                         has_new_call = True
                         if on_tool_call:
-                            on_tool_call(tc.name, tc.arguments)
+                            on_tool_call(tc.name, display_args)
 
                         exec_result = self.tool_registry.execute(tc.name, tc.arguments)
                         executed_tool_calls_cache[call_sig] = exec_result
 
+                        # Populate file_cache on successful read_file
                         if tc.name == "read_file" and isinstance(tc.arguments, dict) and exec_result.get("success"):
-                            f_path = tc.arguments.get("file_path", "")
-                            if f_path:
-                                executed_file_reads.setdefault(f_path, []).append((
-                                    tc.arguments.get("start_line"),
-                                    tc.arguments.get("end_line")
-                                ))
+                            f_p = tc.arguments.get("file_path", "")
+                            norm_p = _normalize_path_key(f_p)
+                            res_data = exec_result.get("data", {})
+                            if isinstance(res_data, dict) and "content" in res_data:
+                                file_cache[norm_p] = {
+                                    "lines": res_data["content"].splitlines(),
+                                    "total_lines": res_data.get("lines", len(res_data["content"].splitlines())),
+                                    "file_path": f_p,
+                                }
 
                         if on_tool_result:
                             on_tool_result(tc.name, exec_result)
@@ -272,12 +334,14 @@ class CodebaseAgent:
                     "content": "Please synthesize a clear, comprehensive explanation to the question based on the retrieved code and tool results collected above.",
                 }
             ]
-            final_res = self.llm.chat(messages=synthesis_messages)
-            synthesis_text = strip_thinking_and_tool_tags(final_res.content or "")
-
-            if synthesis_text and synthesis_text.strip():
-                state.final_answer = synthesis_text.strip()
-            else:
+            try:
+                final_res = self.llm.chat(messages=synthesis_messages, tools=tool_specs if tool_specs else None)
+                synthesis_text = strip_thinking_and_tool_tags(final_res.content or "")
+                if synthesis_text and synthesis_text.strip():
+                    state.final_answer = synthesis_text
+                else:
+                    state.final_answer = self._generate_fallback_explanation(state)
+            except Exception:
                 state.final_answer = self._generate_fallback_explanation(state)
 
         total_time = time.time() - t_start

@@ -524,3 +524,158 @@ def test_find_symbol_to_synthesis_workflow(sample_code_tree):
     assert "## build()" in result.answer
 
 
+def test_file_result_caching_hit_and_miss(sample_code_tree):
+    """
+    Verifies DevPilot v1.2 per-request file_cache:
+    - 1st read_file call is a Cache MISS and invokes the underlying tool.
+    - 2nd read_file call (even with different line slices) is a Cache HIT and is served from memory.
+    """
+    registry = ToolRegistry()
+    raw_read_tool = create_read_file_tool(project_root=sample_code_tree)
+    mock_execute = MagicMock(side_effect=raw_read_tool["func"])
+    read_tool_spec = dict(raw_read_tool)
+    read_tool_spec["func"] = mock_execute
+    registry.register(Tool(**read_tool_spec))
+
+    logged_cache_statuses = []
+
+    def on_tool_call_logger(tool_name: str, args: Dict[str, Any]):
+        if tool_name == "read_file" and "_cache" in args:
+            logged_cache_statuses.append(args["_cache"])
+
+    mock_responses = [
+        # Call 1: read full file (MISS)
+        LLMChatResponse(
+            tool_calls=[
+                ToolCall(id="c1", name="read_file", arguments={"file_path": "app/graph/builder.py"}),
+            ]
+        ),
+        # Call 2: read lines 71 to 78 of the same file (HIT)
+        LLMChatResponse(
+            tool_calls=[
+                ToolCall(id="c2", name="read_file", arguments={"file_path": "app/graph/builder.py", "start_line": 71, "end_line": 78}),
+            ]
+        ),
+        # Final answer
+        LLMChatResponse(
+            content="## build()\nCached file slice verified."
+        ),
+    ]
+
+    mock_llm = MockLLM(mock_responses)
+    agent = CodebaseAgent(llm=mock_llm, tool_registry=registry)
+
+    result = agent.run(
+        question="Explain the build function",
+        on_tool_call=on_tool_call_logger,
+    )
+
+    # Underlying disk read was executed exactly ONCE
+    assert mock_execute.call_count == 1
+    assert logged_cache_statuses == ["MISS", "HIT"]
+    assert "## build()" in result.answer
+
+
+def test_exact_symbol_match_avoids_unnecessary_search_code(sample_code_tree):
+    """
+    Verifies that when find_symbol returns an exact unique match,
+    the agent does not make broad search_code calls.
+    """
+    registry = ToolRegistry()
+    find_spec = create_find_symbol_tool(project_root=sample_code_tree)
+    read_spec = create_read_file_tool(project_root=sample_code_tree)
+    mock_search = MagicMock(return_value={"data": [], "sources": []})
+
+    registry.register(Tool(**find_spec))
+    registry.register(Tool(**read_spec))
+    registry.register(Tool(
+        name="search_code",
+        description="Search code",
+        parameters={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        func=mock_search,
+    ))
+
+    mock_responses = [
+        # Step 1: find_symbol
+        LLMChatResponse(
+            tool_calls=[
+                ToolCall(id="c1", name="find_symbol", arguments={"symbol_name": "build"}),
+            ]
+        ),
+        # Step 2: read_file
+        LLMChatResponse(
+            tool_calls=[
+                ToolCall(id="c2", name="read_file", arguments={"file_path": "app/graph/builder.py", "start_line": 71, "end_line": 78}),
+            ]
+        ),
+        # Step 3: Synthesis
+        LLMChatResponse(
+            content="## build()\nDetailed analysis."
+        ),
+    ]
+
+    mock_llm = MockLLM(mock_responses)
+    agent = CodebaseAgent(llm=mock_llm, tool_registry=registry)
+
+    result = agent.run("Explain the build function")
+
+    # search_code was never called because exact symbol was resolved
+    assert mock_search.call_count == 0
+    assert "## build()" in result.answer
+
+
+def test_ambiguous_symbol_workflow_handling(tmp_path):
+    """
+    Verifies that when a symbol is ambiguous (exists in multiple files),
+    find_symbol returns all candidates for clarification.
+    """
+    (tmp_path / "service_a.py").write_text("def authenticate(): return True\n", encoding="utf-8")
+    (tmp_path / "service_b.py").write_text("def authenticate(): return False\n", encoding="utf-8")
+
+    find_tool = create_find_symbol_tool(project_root=tmp_path)
+    res = find_tool["func"](symbol_name="authenticate")
+
+    assert isinstance(res["data"], list)
+    assert len(res["data"]) == 2
+    paths = {m["file_path"] for m in res["data"]}
+    assert "service_a.py" in paths
+    assert "service_b.py" in paths
+
+
+def test_v1_2_explanation_workflow_fewer_tool_calls(sample_code_tree):
+    """
+    Verifies that a standard code explanation workflow completes in <= 3 tool calls.
+    """
+    registry = ToolRegistry()
+    find_spec = create_find_symbol_tool(project_root=sample_code_tree)
+    read_spec = create_read_file_tool(project_root=sample_code_tree)
+    registry.register(Tool(**find_spec))
+    registry.register(Tool(**read_spec))
+
+    mock_responses = [
+        LLMChatResponse(
+            tool_calls=[
+                ToolCall(id="c1", name="find_symbol", arguments={"symbol_name": "build"}),
+            ]
+        ),
+        LLMChatResponse(
+            tool_calls=[
+                ToolCall(id="c2", name="read_file", arguments={"file_path": "app/graph/builder.py"}),
+            ]
+        ),
+        LLMChatResponse(
+            content="## build()\nComplete structured explanation."
+        ),
+    ]
+
+    mock_llm = MockLLM(mock_responses)
+    agent = CodebaseAgent(llm=mock_llm, tool_registry=registry)
+
+    result = agent.run("Explain the build function")
+
+    assert len(result.tool_calls) == 2
+    assert result.iterations == 3
+    assert "## build()" in result.answer
+
+
+
