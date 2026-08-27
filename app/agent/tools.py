@@ -824,6 +824,9 @@ def create_get_file_blame_tool(
     }
 
 
+_GRAPH_CACHE: Dict[str, Any] = {}
+
+
 def _resolve_graph(
     graph: Optional[Any] = None,
     project_root: Optional[Path] = None,
@@ -836,15 +839,23 @@ def _resolve_graph(
     from app.graph.store import GraphStore
 
     root = (project_root or Path.cwd()).resolve()
+    root_key = str(root)
+    if root_key in _GRAPH_CACHE:
+        return _GRAPH_CACHE[root_key]
+
     default_graph_file = root / "data" / "graph.json"
 
     if default_graph_file.is_file():
         try:
-            return GraphStore.load(default_graph_file)
+            g = GraphStore.load(default_graph_file)
+            _GRAPH_CACHE[root_key] = g
+            return g
         except Exception:
             pass
 
-    return GraphBuilder().build(root)
+    g = GraphBuilder().build(root)
+    _GRAPH_CACHE[root_key] = g
+    return g
 
 
 def create_get_callers_tool(

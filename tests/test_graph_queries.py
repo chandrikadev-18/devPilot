@@ -159,3 +159,68 @@ def test_ambiguous_symbols_handling():
         # If searching by ambiguous short name without specifying file, get_dependencies returns error note
         res = get_dependencies(graph, "common_name", depth=1)
         assert "error" in res or res["total_dependencies"] == 0
+
+
+def test_get_impact_regression_graphbuilder_build():
+    """Regression test: verifies get_impact resolves GraphBuilder.build, bare build, and qualified symbol."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "builder.py").write_text("""
+class GraphBuilder:
+    def build(self, path):
+        return f"graph_{path}"
+
+def helper():
+    return GraphBuilder().build("root")
+""", encoding="utf-8")
+        (root / "caller_service.py").write_text("""
+from builder import helper, GraphBuilder
+
+def run_service():
+    helper()
+    return GraphBuilder().build("service")
+""", encoding="utf-8")
+
+        graph = GraphBuilder().build(root)
+
+        # 1. By class.method name
+        impact_cls = get_impact(graph, "GraphBuilder.build", depth=2)
+        assert impact_cls["total_impacted"] >= 2
+        direct_names = [c["name"] for c in impact_cls["direct_callers"]]
+        assert "helper" in direct_names
+        assert "run_service" in direct_names
+        assert "builder.py" in impact_cls["impacted_files"]
+        assert "caller_service.py" in impact_cls["impacted_files"]
+
+        # 2. By file::class.method qualified format
+        impact_qual = get_impact(graph, "builder.py::GraphBuilder.build", depth=2)
+        assert impact_qual["total_impacted"] >= 2
+        direct_qual = [c["name"] for c in impact_qual["direct_callers"]]
+        assert "helper" in direct_qual
+        assert "run_service" in direct_qual
+
+        # 3. By file:class.method format
+        impact_colon = get_impact(graph, "builder.py:GraphBuilder.build", depth=2)
+        assert impact_colon["total_impacted"] >= 2
+
+        # 4. By callers
+        callers = get_callers(graph, "builder.py::GraphBuilder.build")
+        caller_names = [c["name"] for c in callers]
+        assert "helper" in caller_names
+        assert "run_service" in caller_names
+
+
+def test_get_impact_on_project_graph():
+    """Verifies get_impact on actual project GraphBuilder.build."""
+    project_root = Path(__file__).resolve().parent.parent
+    graph = GraphBuilder().build(project_root)
+
+    impact = get_impact(graph, "app/graph/builder.py::GraphBuilder.build", depth=2)
+    assert impact["total_impacted"] > 0
+    direct_names = [c["name"] for c in impact["direct_callers"]]
+    assert "_resolve_graph" in direct_names
+    assert "_load_or_build_graph" in direct_names
+    assert "run_graph_build" in direct_names
+    assert "app/agent/tools.py" in impact["impacted_files"]
+    assert "app/main.py" in impact["impacted_files"]
+

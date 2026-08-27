@@ -124,6 +124,7 @@ CRITICAL RULES & PRESENTATION FORMAT:
    Changes to `<ClassName>.<symbol>` should be tested against graph construction, call analysis, dependency analysis, and impact analysis.
 
 7. For relationship / dependency questions:
+   - "What are the callers and callees of <symbol>?": First call find_symbol, then call BOTH get_callers and get_callees. Synthesize callers and callees clearly and separately in the final answer.
    - "What functions does <symbol> call?": Use get_callees. Present a concise list of callees with their locations.
    - "What functions call <symbol>?": Use get_callers. Present a concise list of callers with their locations.
    - "What does <symbol> depend on?": Use get_dependencies.
@@ -219,6 +220,7 @@ class CodebaseAgent:
             "end_line": None,
         }
 
+        executed_tool_names: Set[str] = set()
         intent_target_executed = False
 
         for iteration in range(1, self.max_iterations + 1):
@@ -230,6 +232,8 @@ class CodebaseAgent:
                 state.stopped_reason = "max_tool_calls_reached"
                 break
 
+            intent_target_executed_prior = intent_target_executed
+
             response = self.llm.chat(
                 messages=state.messages,
                 tools=tool_specs if tool_specs else None,
@@ -237,6 +241,21 @@ class CodebaseAgent:
 
             # If LLM returned tool calls
             if response.has_tool_calls:
+                # If target tool for a relationship/graph intent was already executed, stop further tool calls
+                if intent_target_executed_prior and (
+                    classification.intent in (
+                        QuestionIntent.IMPACT,
+                        QuestionIntent.CALLEES,
+                        QuestionIntent.CALLERS,
+                        QuestionIntent.DEPENDENCIES,
+                        QuestionIntent.DEPENDENTS,
+                        QuestionIntent.FILE_DEPENDENCIES,
+                    )
+                    or (classification.intent == QuestionIntent.CALLERS_AND_CALLEES and "get_callers" in executed_tool_names and "get_callees" in executed_tool_names)
+                ):
+                    state.stopped_reason = "intent_target_achieved"
+                    break
+
                 cleaned_content = strip_thinking_and_tool_tags(response.content or "")
                 assistant_msg: Dict[str, Any] = {
                     "role": "assistant",
@@ -414,9 +433,12 @@ class CodebaseAgent:
                         if on_tool_result:
                             on_tool_result(tc.name, exec_result)
 
+                    executed_tool_names.add(tc.name)
+
                     # Check if target tool for the classified intent was executed
                     if (
-                        (classification.intent == QuestionIntent.IMPACT and tc.name == "get_impact")
+                        (classification.intent == QuestionIntent.CALLERS_AND_CALLEES and "get_callers" in executed_tool_names and "get_callees" in executed_tool_names)
+                        or (classification.intent == QuestionIntent.IMPACT and tc.name == "get_impact")
                         or (classification.intent == QuestionIntent.CALLEES and tc.name == "get_callees")
                         or (classification.intent == QuestionIntent.CALLERS and tc.name == "get_callers")
                         or (classification.intent == QuestionIntent.DEPENDENCIES and tc.name == "get_dependencies")
@@ -436,6 +458,9 @@ class CodebaseAgent:
                         result_content = json.dumps(exec_result["data"], indent=2) if not isinstance(exec_result["data"], str) else exec_result["data"]
                     else:
                         result_content = json.dumps({"error": exec_result["error"]})
+
+                    if intent_target_executed:
+                        result_content += f"\n\n[Sufficient evidence collected for {classification.intent.value}. Do not invoke further tools; provide the final formatted answer immediately.]"
 
                     max_chars = get_max_tool_result_characters()
                     if len(result_content) > max_chars:
@@ -482,6 +507,17 @@ class CodebaseAgent:
                     "### Recommendation\n\nChanges to this symbol should be tested against graph construction and dependent tools.\n\n"
                     "Keep the answer concise. Do not output <think> tags, internal reasoning, or raw tool syntax."
                 )
+            elif classification.intent == QuestionIntent.CALLERS_AND_CALLEES:
+                synthesis_instruction = (
+                    "Please synthesize a clear, concise, and structured answer detailing both Callers and Callees. Follow this structure:\n\n"
+                    f"**Symbol:** `{resolved_symbol_context.get('canonical_name') or classification.target_symbol or 'Symbol'}`\n"
+                    f"**File:** `{resolved_symbol_context.get('file_path') or ''}`\n"
+                    f"**Lines:** {resolved_symbol_context.get('start_line', 1)}–{resolved_symbol_context.get('end_line', '')}\n\n"
+                    "### Callers\n\n- List production callers (e.g. `<caller_name>` in `<file_path>:<line>`)\n- List test callers (e.g. `<test_caller_name>` in `<file_path>:<line>`)\n\n"
+                    "### Callees\n\n- `<callee_1>` (`<file_path>:<line>`)\n- `<callee_2>` (`<file_path>:<line>`)\n\n"
+                    "Do NOT state 'No callers found' unless get_callers returned an empty list. "
+                    "Keep the answer concise and grounded strictly in the tool outputs. Do not output <think> tags or raw tool syntax."
+                )
             else:
                 synthesis_instruction = (
                     "Please synthesize a clear, concise, and structured final answer to the question based on the retrieved codebase findings above. "
@@ -502,9 +538,9 @@ class CodebaseAgent:
                 if synthesis_text and synthesis_text.strip():
                     state.final_answer = synthesis_text
                 else:
-                    state.final_answer = self._generate_fallback_explanation(state, resolved_symbol_context)
+                    state.final_answer = self._generate_fallback_explanation(state, resolved_symbol_context, classification)
             except Exception:
-                state.final_answer = self._generate_fallback_explanation(state, resolved_symbol_context)
+                state.final_answer = self._generate_fallback_explanation(state, resolved_symbol_context, classification)
 
         total_time = time.time() - t_start
 
@@ -520,64 +556,224 @@ class CodebaseAgent:
             stopped_reason=state.stopped_reason,
         )
 
-    def _generate_fallback_explanation(self, state: AgentState, resolved_context: Optional[Dict[str, Any]] = None) -> str:
+    def _generate_fallback_explanation(
+        self,
+        state: AgentState,
+        resolved_context: Optional[Dict[str, Any]] = None,
+        classification: Optional[Any] = None,
+    ) -> str:
         """Generates a structured, grounded explanation from collected tool results if synthesis returns empty."""
         import re
         ctx = resolved_context or {}
+        if classification is None and state.user_question:
+            classification = classify_question_intent(state.user_question)
+
+        current_intent = getattr(classification, "intent", None)
 
         # 1. Check for not found indicators first
         for res in state.tool_results:
             data = res.get("data")
             if isinstance(data, str) and ("was not found" in data.lower() or "no direct callers" in data.lower()):
-                # Extract symbol name
-                target_sym = "symbol"
+                target_sym = ctx.get("symbol_name") or "symbol"
                 for tc in state.tool_calls:
                     if isinstance(tc.get("arguments"), dict):
                         target_sym = tc["arguments"].get("symbol_name") or tc["arguments"].get("symbol") or target_sym
                 return f"Symbol not found:\n{target_sym}\n\nSuggestions:\n- Check the symbol name\n- Try a fully qualified name\n- Use graph-info or search-code"
 
-        # 2. Check for impact analysis results (for impact-specific questions)
-        for res in state.tool_results:
-            data = res.get("data")
-            if isinstance(data, dict) and "total_impacted" in data and "direct_callers" in data:
-                sym = ctx.get("canonical_name") or data.get("symbol", "Target")
-                f_path = ctx.get("file_path") or "app/graph/builder.py"
-                s_line = ctx.get("start_line") or 38
-                e_line = ctx.get("end_line") or 328
+        # 2. Check for impact analysis results (for impact questions)
+        if current_intent == QuestionIntent.IMPACT:
+            for res in state.tool_results:
+                data = res.get("data")
+                if isinstance(data, dict) and "total_impacted" in data and "direct_callers" in data:
+                    sym = ctx.get("canonical_name") or data.get("symbol", "Target")
+                    f_path = ctx.get("file_path") or "app/graph/builder.py"
+                    s_line = ctx.get("start_line") or 38
+                    e_line = ctx.get("end_line") or 328
 
-                d_callers = [c["name"] for c in data.get("direct_callers", [])]
-                i_callers = [c["name"] for c in data.get("indirect_callers", [])]
-                files = data.get("impacted_files", [])
+                    d_callers = [c["name"] for c in data.get("direct_callers", [])]
+                    i_callers = [c["name"] for c in data.get("indirect_callers", [])]
+                    files = data.get("impacted_files", [])
 
-                lines = [
-                    "## Impact Analysis",
-                    "",
-                    f"**Symbol:** `{sym}`",
-                    f"**File:** `{f_path}`",
-                    f"**Lines:** {s_line}–{e_line}",
-                    "",
-                    "### Direct Impact",
-                    "",
-                ]
-                for c in d_callers:
-                    lines.append(f"- `{c}`")
-                lines.append("")
-                lines.append("### Indirect Impact")
-                lines.append("")
-                for c in i_callers:
-                    lines.append(f"- `{c}`")
-                lines.append("")
-                lines.append("### Impacted Areas")
-                lines.append("")
-                for f in files:
-                    lines.append(f"- `{f}`")
-                lines.append("")
-                lines.append("### Recommendation")
-                lines.append("")
-                lines.append(f"Changes to `{sym}` should be tested against graph construction, call analysis, dependency analysis, and impact analysis.")
-                return "\n".join(lines)
+                    lines = [
+                        "## Impact Analysis",
+                        "",
+                        f"**Symbol:** `{sym}`",
+                        f"**File:** `{f_path}`",
+                        f"**Lines:** {s_line}–{e_line}",
+                        "",
+                        "### Direct Impact",
+                        "",
+                    ]
+                    for c in d_callers:
+                        lines.append(f"- `{c}`")
+                    lines.append("")
+                    lines.append("### Indirect Impact")
+                    lines.append("")
+                    for c in i_callers:
+                        lines.append(f"- `{c}`")
+                    lines.append("")
+                    lines.append("### Impacted Areas")
+                    lines.append("")
+                    for f in files:
+                        lines.append(f"- `{f}`")
+                    lines.append("")
+                    lines.append("### Recommendation")
+                    lines.append("")
+                    lines.append(f"Changes to `{sym}` should be tested against graph construction, call analysis, dependency analysis, and impact analysis.")
+                    return "\n".join(lines)
 
-        # 3. Check for symbol explanation (from find_symbol / read_file)
+        # 3. Check for combined callers and callees results
+        if current_intent == QuestionIntent.CALLERS_AND_CALLEES:
+            callers_data = []
+            callees_data = []
+            for tc_info, res in zip(state.tool_calls, state.tool_results):
+                tool_name = tc_info.get("tool")
+                d = res.get("data")
+                if tool_name == "get_callers":
+                    if isinstance(d, list):
+                        callers_data = d
+                    elif isinstance(d, dict) and "callers" in d:
+                        callers_data = d.get("callers", [])
+                elif tool_name == "get_callees":
+                    if isinstance(d, list):
+                        callees_data = d
+                    elif isinstance(d, dict) and "callees" in d:
+                        callees_data = d.get("callees", [])
+
+            sym = ctx.get("canonical_name") or ctx.get("symbol_name") or "Symbol"
+            f_path = ctx.get("file_path") or ""
+            s_line = ctx.get("start_line") or 1
+            e_line = ctx.get("end_line") or s_line
+
+            lines = [
+                f"**Symbol:** `{sym}`",
+                f"**File:** `{f_path}`",
+                f"**Lines:** {s_line}–{e_line}",
+                "",
+                "### Callers",
+                "",
+            ]
+
+            if not callers_data:
+                lines.append("- No direct callers found.")
+            else:
+                prod_callers = [c for c in callers_data if not (c.get("file_path", "").startswith("tests/") or "test" in c.get("name", "").lower())]
+                test_callers = [c for c in callers_data if c.get("file_path", "").startswith("tests/") or "test" in c.get("name", "").lower()]
+
+                if prod_callers:
+                    lines.append("**Production Callers:**")
+                    for c in prod_callers:
+                        loc = f" (`{c['file_path']}`:{c.get('start_line', 0)})" if c.get("file_path") else ""
+                        lines.append(f"- `{c['name']}`{loc}")
+                    lines.append("")
+
+                if test_callers:
+                    lines.append("**Test Callers:**")
+                    for c in test_callers:
+                        loc = f" (`{c['file_path']}`:{c.get('start_line', 0)})" if c.get("file_path") else ""
+                        lines.append(f"- `{c['name']}`{loc}")
+                    lines.append("")
+
+            lines.append("### Callees")
+            lines.append("")
+            if not callees_data:
+                lines.append("- No outgoing calls found.")
+            else:
+                for c in callees_data:
+                    loc = f" (`{c['file_path']}`:{c.get('start_line', 0)})" if c.get("file_path") else ""
+                    lines.append(f"- `{c['name']}`{loc}")
+
+            return "\n".join(lines)
+
+        # 4. Check for callees results (for outgoing call questions)
+        if current_intent == QuestionIntent.CALLEES:
+            for res in state.tool_results:
+                data = res.get("data")
+                if isinstance(data, dict) and "callees" in data:
+                    sym = ctx.get("canonical_name") or data.get("symbol", "Symbol")
+                    callees = data.get("callees", [])
+                    lines = [
+                        "Analysis:",
+                        f"Symbol: {sym}",
+                        "",
+                        f"Outgoing Calls ({len(callees)}):",
+                    ]
+                    for idx, c in enumerate(callees, 1):
+                        line_str = f":{c['start_line']}" if c.get("start_line") else ""
+                        lines.append(f"{idx}. {c['name']} ({c['file_path']}{line_str})")
+                    lines.append("")
+                    lines.append("Sources:")
+                    for c in callees[:5]:
+                        lines.append(f"- {c['file_path']}")
+                    return "\n".join(lines)
+
+        # 4. Check for callers results (for incoming call questions)
+        if current_intent == QuestionIntent.CALLERS:
+            for res in state.tool_results:
+                data = res.get("data")
+                if isinstance(data, dict) and "callers" in data:
+                    sym = ctx.get("canonical_name") or data.get("symbol", "Symbol")
+                    callers = data.get("callers", [])
+                    lines = [
+                        "Analysis:",
+                        f"Symbol: {sym}",
+                        "",
+                        f"Incoming Callers ({len(callers)}):",
+                    ]
+                    for idx, c in enumerate(callers, 1):
+                        line_str = f":{c['start_line']}" if c.get("start_line") else ""
+                        lines.append(f"{idx}. {c['name']} ({c['file_path']}{line_str})")
+                    lines.append("")
+                    lines.append("Sources:")
+                    for c in callers[:5]:
+                        lines.append(f"- {c['file_path']}")
+                    return "\n".join(lines)
+
+        # 5. Check for dependencies results
+        if current_intent == QuestionIntent.DEPENDENCIES:
+            for res in state.tool_results:
+                data = res.get("data")
+                if isinstance(data, dict) and "dependencies" in data:
+                    sym = ctx.get("canonical_name") or data.get("symbol", "Symbol")
+                    deps = data.get("dependencies", [])
+                    lines = [
+                        "Analysis:",
+                        f"Symbol: {sym}",
+                        "",
+                        f"Dependencies ({len(deps)}):",
+                    ]
+                    for idx, d in enumerate(deps, 1):
+                        line_str = f":{d['start_line']}" if d.get("start_line") else ""
+                        lines.append(f"{idx}. {d['name']} ({d['file_path']}{line_str})")
+                    lines.append("")
+                    lines.append("Sources:")
+                    for d in deps[:5]:
+                        lines.append(f"- {d['file_path']}")
+                    return "\n".join(lines)
+
+        # 6. Check for dependents results
+        if current_intent == QuestionIntent.DEPENDENTS:
+            for res in state.tool_results:
+                data = res.get("data")
+                if isinstance(data, dict) and "dependents" in data:
+                    sym = ctx.get("canonical_name") or data.get("symbol", "Symbol")
+                    dependents = data.get("dependents", [])
+                    lines = [
+                        "Analysis:",
+                        f"Symbol: {sym}",
+                        "",
+                        f"Dependents ({len(dependents)}):",
+                    ]
+                    for idx, d in enumerate(dependents, 1):
+                        line_str = f":{d['start_line']}" if d.get("start_line") else ""
+                        lines.append(f"{idx}. {d['name']} ({d['file_path']}{line_str})")
+                    lines.append("")
+                    lines.append("Sources:")
+                    for d in dependents[:5]:
+                        lines.append(f"- {d['file_path']}")
+                    return "\n".join(lines)
+
+        # 7. Check for symbol definition / explanation (from find_symbol / read_file)
         for res in state.tool_results:
             if not res.get("success"):
                 continue
@@ -592,6 +788,21 @@ class CodebaseAgent:
                     s_line = first.get("start_line", 1)
                     e_line = first.get("end_line", s_line)
                     code = first.get("code", "")
+
+                    if current_intent == QuestionIntent.DEFINITION:
+                        lines = [
+                            "Analysis:",
+                            f"Symbol: {full_sym}",
+                            f"File: {f_path}",
+                            f"Lines: {s_line}-{e_line}",
+                            "",
+                            "Definition:",
+                            f"`{full_sym}` is defined in `{f_path}` at lines {s_line}-{e_line}.",
+                            "",
+                            "Sources:",
+                            f"- {f_path}:{s_line}-{e_line}",
+                        ]
+                        return "\n".join(lines)
 
                     # Extract docstring if present
                     doc_match = re.search(r'"""([\s\S]*?)"""', code) or re.search(r"'''([\s\S]*?)'''", code)
@@ -611,7 +822,6 @@ class CodebaseAgent:
                             f"Returns structured execution results",
                         ]
 
-                    # Extract callees / dependencies from other tool results if available
                     deps = []
                     callers = []
                     for r in state.tool_results:
@@ -652,26 +862,5 @@ class CodebaseAgent:
                     lines.append("Sources:")
                     lines.append(f"- {f_path}:{s_line}-{e_line}")
                     return "\n".join(lines)
-
-        # 4. Check for callees results (for outgoing call questions)
-        for res in state.tool_results:
-            data = res.get("data")
-            if isinstance(data, dict) and "callees" in data:
-                sym = data.get("symbol", "Symbol")
-                callees = data.get("callees", [])
-                lines = [
-                    "Analysis:",
-                    f"Symbol: {sym}",
-                    "",
-                    f"Outgoing Calls ({len(callees)}):",
-                ]
-                for idx, c in enumerate(callees, 1):
-                    line_str = f":{c['start_line']}" if c.get("start_line") else ""
-                    lines.append(f"{idx}. {c['name']} ({c['file_path']}{line_str})")
-                lines.append("")
-                lines.append("Sources:")
-                for c in callees[:3]:
-                    lines.append(f"- {c['file_path']}")
-                return "\n".join(lines)
 
         return "I couldn't find enough source information to explain this symbol."

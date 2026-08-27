@@ -19,7 +19,7 @@ class AmbiguousSymbolError(Exception):
 
 
 def _resolve_target_nodes(graph: GraphStore, symbol: str, allow_multiple: bool = False) -> List[GraphNode]:
-    """Resolves a symbol string (node ID, symbol name, or class.method) to matching GraphNode(s)."""
+    """Resolves a symbol string (node ID, symbol name, class.method, or file::symbol) to matching GraphNode(s)."""
     if not symbol or not symbol.strip():
         return []
 
@@ -30,13 +30,79 @@ def _resolve_target_nodes(graph: GraphStore, symbol: str, allow_multiple: bool =
     if node:
         return [node]
 
-    # 2. Try class.method format
+    # 1b. Node ID with normalized path (e.g. method:app\graph\builder.py:GraphBuilder.build)
+    for prefix in ("method:", "function:", "class:", "file:", "module:"):
+        if target.startswith(prefix):
+            rest = target[len(prefix):]
+            if ":" in rest:
+                path_part, sym_part = rest.rsplit(":", 1)
+                norm_p = normalize_graph_path(path_part)
+                candidate_id = f"{prefix}{norm_p}:{sym_part}"
+                node = graph.get_node(candidate_id)
+                if node:
+                    return [node]
+            else:
+                norm_p = normalize_graph_path(rest)
+                candidate_id = f"{prefix}{norm_p}"
+                node = graph.get_node(candidate_id)
+                if node:
+                    return [node]
+
+    # 2. File-qualified symbol formats (e.g. app/graph/builder.py::GraphBuilder.build or app/graph/builder.py:build)
+    file_spec = None
+    sym_spec = None
+    if "::" in target:
+        file_spec, sym_spec = target.split("::", 1)
+    elif ":" in target and not target.startswith(("http:", "https:")):
+        file_spec, sym_spec = target.rsplit(":", 1)
+
+    if file_spec and sym_spec:
+        norm_f = normalize_graph_path(file_spec.strip())
+        s_target = sym_spec.strip()
+        candidate_nodes = [
+            n for n in graph.get_nodes()
+            if n.file_path and (norm_f == n.file_path or norm_f in n.file_path or n.file_path.endswith(norm_f))
+        ]
+        if candidate_nodes:
+            matched = []
+            if "." in s_target:
+                parts = s_target.split(".")
+                p_cls = parts[-2]
+                m_name = parts[-1]
+                matched = [
+                    n for n in candidate_nodes
+                    if (n.node_type == NodeType.METHOD and n.name == m_name and n.metadata.get("parent_class") == p_cls)
+                    or n.name == s_target
+                ]
+            else:
+                matched = [
+                    n for n in candidate_nodes
+                    if n.name == s_target or n.name.lower() == s_target.lower()
+                ]
+
+            if len(matched) == 1:
+                return matched
+            if len(matched) > 1 and not allow_multiple:
+                raise AmbiguousSymbolError(
+                    f"Symbol '{symbol}' is ambiguous and matches multiple entities: {[n.id for n in matched]}"
+                )
+            if matched:
+                return matched
+
+    # 3. Try class.method format (e.g. GraphBuilder.build or AuthService.login)
     if "." in target:
-        # e.g. AuthService.login
         parts = target.split(".")
+        p_cls = parts[-2]
         m_name = parts[-1]
         nodes = graph.find_nodes_by_name(m_name)
-        matched = [n for n in nodes if n.node_type == NodeType.METHOD and n.metadata.get("parent_class") == parts[0]]
+        matched = [
+            n for n in nodes
+            if (n.node_type == NodeType.METHOD and n.metadata.get("parent_class") == p_cls)
+            or n.name == target
+        ]
+        if not matched:
+            matched = graph.find_nodes_by_name(target)
+
         if len(matched) == 1:
             return matched
         if len(matched) > 1 and not allow_multiple:
@@ -46,7 +112,7 @@ def _resolve_target_nodes(graph: GraphStore, symbol: str, allow_multiple: bool =
         if matched:
             return matched
 
-    # 3. By symbol name
+    # 4. By symbol name
     nodes = graph.find_nodes_by_name(target)
     if len(nodes) == 1:
         return nodes
@@ -57,9 +123,12 @@ def _resolve_target_nodes(graph: GraphStore, symbol: str, allow_multiple: bool =
     if nodes:
         return nodes
 
-    # 4. Partial file path match
+    # 5. Partial file path match
     norm_t = normalize_graph_path(target)
-    file_nodes = [n for n in graph.get_nodes(NodeType.FILE) if norm_t in n.file_path]
+    file_nodes = [
+        n for n in graph.get_nodes(NodeType.FILE)
+        if norm_t == n.file_path or norm_t in n.file_path or n.file_path.endswith(norm_t)
+    ]
     if len(file_nodes) == 1:
         return file_nodes
     if len(file_nodes) > 1 and not allow_multiple:
@@ -339,6 +408,7 @@ def get_impact(
     indirect_callers: List[Dict[str, Any]] = []
     impacted_files: Set[str] = set()
     visited: Set[str] = {n.id for n in start_nodes}
+    seen_callers: Set[str] = set()
 
     # Queue items: (current_node, current_depth)
     queue = deque([(n, 0) for n in start_nodes])
@@ -364,15 +434,18 @@ def get_impact(
                 "node_type": caller_n.node_type.value,
                 "file_path": caller_n.file_path,
                 "start_line": caller_n.start_line,
+                "end_line": caller_n.end_line,
                 "call_line": edge.line_number,
                 "calls_target": curr_node.name,
                 "depth": next_depth,
             }
 
-            if next_depth == 1:
-                direct_callers.append(item)
-            else:
-                indirect_callers.append(item)
+            if caller_n.id not in seen_callers:
+                seen_callers.add(caller_n.id)
+                if next_depth == 1:
+                    direct_callers.append(item)
+                else:
+                    indirect_callers.append(item)
 
             if caller_n.id not in visited:
                 visited.add(caller_n.id)

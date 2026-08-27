@@ -379,3 +379,151 @@ def test_callers_question_using_get_callers():
     assert len(result.tool_calls) == 2
     assert result.stopped_reason in ("intent_target_achieved", "completed", "max_iterations_reached")
     assert "_resolve_graph" in result.answer
+
+
+def test_dependencies_question_using_get_dependencies():
+    """Verifies that dependencies questions execute find_symbol + get_dependencies."""
+    registry = ToolRegistry()
+    registry.register(Tool(
+        name="find_symbol",
+        description="Find symbol",
+        parameters={"type": "object", "properties": {"symbol_name": {"type": "string"}}, "required": ["symbol_name"]},
+        func=lambda symbol_name: [{"symbol_name": "build", "parent_symbol": "GraphBuilder", "file_path": "app/graph/builder.py"}],
+    ))
+    registry.register(Tool(
+        name="get_dependencies",
+        description="Get dependencies",
+        parameters={"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]},
+        func=lambda symbol: {"symbol": symbol, "dependencies": [{"name": "ASTExtractor.extract", "file_path": "app/graph/extractor.py", "start_line": 20}]},
+    ))
+
+    llm = MockSequenceLLM([
+        LLMChatResponse(
+            content="",
+            tool_calls=[ToolCall(id="c1", name="find_symbol", arguments={"symbol_name": "build"})],
+        ),
+        LLMChatResponse(
+            content="",
+            tool_calls=[ToolCall(id="c2", name="get_dependencies", arguments={"symbol": "GraphBuilder.build"})],
+        ),
+    ])
+
+    agent = CodebaseAgent(llm=llm, tool_registry=registry, max_iterations=3)
+    result = agent.run("What does build depend on?")
+
+    assert len(result.tool_calls) == 2
+    assert result.stopped_reason in ("intent_target_achieved", "completed", "max_iterations_reached")
+    assert "ASTExtractor" in result.answer
+
+
+def test_dependents_question_using_get_dependents():
+    """Verifies that dependents questions execute find_symbol + get_dependents."""
+    registry = ToolRegistry()
+    registry.register(Tool(
+        name="find_symbol",
+        description="Find symbol",
+        parameters={"type": "object", "properties": {"symbol_name": {"type": "string"}}, "required": ["symbol_name"]},
+        func=lambda symbol_name: [{"symbol_name": "build", "parent_symbol": "GraphBuilder", "file_path": "app/graph/builder.py"}],
+    ))
+    registry.register(Tool(
+        name="get_dependents",
+        description="Get dependents",
+        parameters={"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]},
+        func=lambda symbol: {"symbol": symbol, "dependents": [{"name": "run_graph_build", "file_path": "app/main.py", "start_line": 1080}]},
+    ))
+
+    llm = MockSequenceLLM([
+        LLMChatResponse(
+            content="",
+            tool_calls=[ToolCall(id="c1", name="find_symbol", arguments={"symbol_name": "build"})],
+        ),
+        LLMChatResponse(
+            content="",
+            tool_calls=[ToolCall(id="c2", name="get_dependents", arguments={"symbol": "GraphBuilder.build"})],
+        ),
+    ])
+
+    agent = CodebaseAgent(llm=llm, tool_registry=registry, max_iterations=3)
+    result = agent.run("What depends on build?")
+
+    assert len(result.tool_calls) == 2
+    assert result.stopped_reason in ("intent_target_achieved", "completed", "max_iterations_reached")
+    assert "run_graph_build" in result.answer
+
+
+def test_definition_question_using_find_symbol():
+    """Verifies that definition questions execute only find_symbol in 1 tool call."""
+    registry = ToolRegistry()
+    registry.register(Tool(
+        name="find_symbol",
+        description="Find symbol",
+        parameters={"type": "object", "properties": {"symbol_name": {"type": "string"}}, "required": ["symbol_name"]},
+        func=lambda symbol_name: [{"symbol_name": "build", "parent_symbol": "GraphBuilder", "file_path": "app/graph/builder.py", "start_line": 38, "end_line": 328}],
+    ))
+
+    llm = MockSequenceLLM([
+        LLMChatResponse(
+            content="",
+            tool_calls=[ToolCall(id="c1", name="find_symbol", arguments={"symbol_name": "build"})],
+        ),
+        LLMChatResponse(
+            content="`GraphBuilder.build` is defined in `app/graph/builder.py` at lines 38-328.",
+        ),
+    ])
+
+    agent = CodebaseAgent(llm=llm, tool_registry=registry, max_iterations=3)
+    result = agent.run("Where is build defined?")
+
+    assert len(result.tool_calls) == 1
+    assert "GraphBuilder.build" in result.answer
+    assert "app/graph/builder.py" in result.answer
+
+
+def test_tool_budget_enforcement():
+    """Verifies that tool call count never exceeds MAX_TOOL_CALLS budget."""
+    call_counter = 0
+
+    def dummy_tool(query: str):
+        nonlocal call_counter
+        call_counter += 1
+        return {"data": "ok", "sources": []}
+
+    registry = ToolRegistry()
+    registry.register(Tool(
+        name="search_code",
+        description="Search code",
+        parameters={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        func=dummy_tool,
+    ))
+
+    llm = MockSequenceLLM([
+        LLMChatResponse(content="", tool_calls=[ToolCall(id="c1", name="search_code", arguments={"query": "q1"})]),
+        LLMChatResponse(content="", tool_calls=[ToolCall(id="c2", name="search_code", arguments={"query": "q2"})]),
+        LLMChatResponse(content="", tool_calls=[ToolCall(id="c3", name="search_code", arguments={"query": "q3"})]),
+        LLMChatResponse(content="", tool_calls=[ToolCall(id="c4", name="search_code", arguments={"query": "q4"})]),
+        LLMChatResponse(content="", tool_calls=[ToolCall(id="c5", name="search_code", arguments={"query": "q5"})]),
+    ])
+
+    agent = CodebaseAgent(llm=llm, tool_registry=registry, max_tool_calls=4, max_iterations=10)
+    result = agent.run("Find all authentication mechanisms")
+
+    assert len(result.tool_calls) <= 4
+    assert result.stopped_reason in ("max_tool_calls_reached", "completed")
+
+
+def test_strip_thinking_tags_in_agent_response():
+    """Verifies that <think> and <thought> tags are strictly stripped from final answers."""
+    registry = ToolRegistry()
+    llm = MockSequenceLLM([
+        LLMChatResponse(
+            content="<think>\nInternal reasoning step...\nEvaluating graph nodes...\n</think>\n\nAnalysis:\nSymbol: GraphBuilder.build\nFile: app/graph/builder.py\nLines: 38-328"
+        ),
+    ])
+
+    agent = CodebaseAgent(llm=llm, tool_registry=registry, max_iterations=1)
+    result = agent.run("Where is build defined?")
+
+    assert "<think>" not in result.answer
+    assert "</think>" not in result.answer
+    assert "Internal reasoning" not in result.answer
+    assert "Symbol: GraphBuilder.build" in result.answer

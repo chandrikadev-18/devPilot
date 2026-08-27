@@ -305,3 +305,85 @@ def test_agent_repetition_detection():
     assert result.stopped_reason == "repeated_tool_call"
     # Verify it stopped after detecting repeats instead of looping through all max iterations endlessly
     assert result.iterations <= 3
+
+
+def test_agent_callers_and_callees_query():
+    """
+    Verifies that the agent handles combined caller + callee questions:
+    'What are the callers and callees of GraphBuilder.build?'
+    by calling find_symbol, get_callers, and get_callees and synthesizing both.
+    """
+    from app.agent import create_codebase_agent
+    from app.agent.intent import classify_question_intent, QuestionIntent
+    from app.search.semantic_search import SemanticSearcher
+
+    question = "What are the callers and callees of GraphBuilder.build?"
+    classification = classify_question_intent(question)
+    assert classification.intent == QuestionIntent.CALLERS_AND_CALLEES
+    assert classification.target_symbol == "GraphBuilder.build"
+    assert classification.preferred_tools == ["find_symbol", "get_callers", "get_callees"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "builder.py").write_text("""
+class GraphBuilder:
+    def build(self):
+        self.scan()
+        return "done"
+
+    def scan(self):
+        pass
+
+def caller_func():
+    return GraphBuilder().build()
+""", encoding="utf-8")
+
+        mock_searcher = MagicMock(spec=SemanticSearcher)
+
+        # Mock LLM calling find_symbol, get_callers, and get_callees
+        step1 = LLMChatResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="c_find",
+                    name="find_symbol",
+                    arguments={"symbol_name": "GraphBuilder.build"},
+                )
+            ],
+        )
+        step2 = LLMChatResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="c_callers",
+                    name="get_callers",
+                    arguments={"symbol": "GraphBuilder.build"},
+                ),
+                ToolCall(
+                    id="c_callees",
+                    name="get_callees",
+                    arguments={"symbol": "GraphBuilder.build"},
+                ),
+            ],
+        )
+        step3 = LLMChatResponse(
+            content="",
+            tool_calls=[],
+        )
+
+        mock_llm = MockLLM([step1, step2, step3])
+        agent = create_codebase_agent(
+            llm=mock_llm,
+            searcher=mock_searcher,
+            project_root=root,
+        )
+
+        result = agent.run(question)
+        tool_names = [tc["tool"] for tc in result.tool_calls]
+        assert "find_symbol" in tool_names
+        assert "get_callers" in tool_names
+        assert "get_callees" in tool_names
+        assert "caller_func" in result.answer
+        assert "scan" in result.answer
+        assert "No direct callers found" not in result.answer
+

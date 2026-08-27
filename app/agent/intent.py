@@ -13,6 +13,7 @@ from typing import List, Optional
 
 class QuestionIntent(str, Enum):
     IMPACT = "IMPACT"
+    CALLERS_AND_CALLEES = "CALLERS_AND_CALLEES"
     CALLEES = "CALLEES"
     CALLERS = "CALLERS"
     DEPENDENCIES = "DEPENDENCIES"
@@ -38,7 +39,11 @@ def _clean_symbol_candidate(raw: str) -> str:
     for prefix in ("the ", "a ", "function ", "method ", "class ", "module "):
         if cleaned.lower().startswith(prefix):
             cleaned = cleaned[len(prefix):].strip()
-    return cleaned.strip().strip("'\"`")
+    # Strip common trailing suffixes
+    for suffix in (" function", " method", " class", " module"):
+        if cleaned.lower().endswith(suffix):
+            cleaned = cleaned[:-len(suffix)].strip()
+    return cleaned.strip().strip("'\"`?,.:;()[]{}")
 
 
 def classify_question_intent(question: str) -> IntentClassification:
@@ -69,6 +74,28 @@ def classify_question_intent(question: str) -> IntentClassification:
                 intent=QuestionIntent.IMPACT,
                 target_symbol=sym,
                 preferred_tools=["find_symbol", "get_impact"],
+            )
+
+    # 2. CALLERS_AND_CALLEES Intent (Combined callers & callees)
+    combined_patterns = [
+        r"what\s+(?:are\s+)?(?:the\s+)?callers\s+and\s+callees\s+(?:of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"what\s+(?:are\s+)?(?:the\s+)?callees\s+and\s+callers\s+(?:of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"callers\s+and\s+callees\s+(?:of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"callees\s+and\s+callers\s+(?:of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"who\s+calls\s+([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?\s+and\s+what\s+does\s+(?:it|\1)\s+call",
+        r"what\s+calls\s+([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?\s+and\s+what\s+does\s+(?:it|\1)\s+call",
+        r"what\s+does\s+([a-zA-Z0-9_.]+?)\s+call\s+and\s+who\s+calls\s+(?:it|\1)",
+        r"incoming\s+and\s+outgoing\s+calls?\s+(?:of|for|to)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"outgoing\s+and\s+incoming\s+calls?\s+(?:of|for|to)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+    ]
+    for pat in combined_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym = _clean_symbol_candidate(m.group(1))
+            return IntentClassification(
+                intent=QuestionIntent.CALLERS_AND_CALLEES,
+                target_symbol=sym,
+                preferred_tools=["find_symbol", "get_callers", "get_callees"],
             )
 
     # 2. CALLEES Intent (What functions does X call?)
