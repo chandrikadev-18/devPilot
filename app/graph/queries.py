@@ -141,6 +141,17 @@ def _resolve_target_nodes(graph: GraphStore, symbol: str, allow_multiple: bool =
     return []
 
 
+def _get_node_qualified_name(node: GraphNode) -> str:
+    """Returns Class.method for methods, or name for functions/classes/modules."""
+    if node.metadata and node.metadata.get("parent_class"):
+        return f"{node.metadata['parent_class']}.{node.name}"
+    if node.id.startswith("method:"):
+        parts = node.id.split(":")
+        if len(parts) >= 3:
+            return parts[2]
+    return node.name
+
+
 def get_callers(graph: GraphStore, symbol: str) -> List[Dict[str, Any]]:
     """
     Returns all functions and methods that directly call the given symbol.
@@ -165,6 +176,7 @@ def get_callers(graph: GraphStore, symbol: str) -> List[Dict[str, Any]]:
                 callers_list.append({
                     "id": caller_node.id,
                     "name": caller_node.name,
+                    "qualified_name": _get_node_qualified_name(caller_node),
                     "node_type": caller_node.node_type.value,
                     "file_path": caller_node.file_path,
                     "start_line": caller_node.start_line,
@@ -200,6 +212,7 @@ def get_callees(graph: GraphStore, symbol: str) -> List[Dict[str, Any]]:
                 callees_list.append({
                     "id": callee_node.id,
                     "name": callee_node.name,
+                    "qualified_name": _get_node_qualified_name(callee_node),
                     "node_type": callee_node.node_type.value,
                     "file_path": callee_node.file_path,
                     "start_line": callee_node.start_line,
@@ -265,6 +278,7 @@ def get_dependencies(
             dep_entry = {
                 "id": target_n.id,
                 "name": target_n.name,
+                "qualified_name": _get_node_qualified_name(target_n),
                 "node_type": target_n.node_type.value,
                 "file_path": target_n.file_path,
                 "start_line": target_n.start_line,

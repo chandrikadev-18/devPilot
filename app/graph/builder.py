@@ -86,11 +86,19 @@ class GraphBuilder:
         all_symbols_by_name: Dict[str, List[str]] = {}  # symbol_name -> list of node_ids
 
         # Track module name to file mapping for imports
-        # e.g. "auth" -> "auth.py", "backend.auth" -> "backend/auth.py"
+        # e.g. "auth" -> "auth.py", "backend.auth" -> "backend/auth.py", "app.graph" -> "app/graph/__init__.py"
         module_to_file: Dict[str, str] = {}
         for rel_p in parsed_files.keys():
             mod_stem = Path(rel_p).with_suffix("").as_posix().replace("/", ".")
             module_to_file[mod_stem] = rel_p
+            # Also register package root for __init__.py files
+            if Path(rel_p).name == "__init__.py":
+                pkg_stem = Path(rel_p).parent.as_posix().replace("/", ".")
+                if pkg_stem:
+                    module_to_file[pkg_stem] = rel_p
+                simple_pkg = Path(rel_p).parent.name
+                if simple_pkg and simple_pkg not in module_to_file:
+                    module_to_file[simple_pkg] = rel_p
             # Also register simple filename without extension
             simple_stem = Path(rel_p).stem
             if simple_stem not in module_to_file:
@@ -254,9 +262,33 @@ class GraphBuilder:
                     ))
 
         # Step 5: Deterministic Name Resolution for CALLS edges
+        BUILTIN_METHOD_NAMES: Set[str] = {
+            # Dict methods
+            "get", "items", "keys", "values", "update", "setdefault", "pop", "popitem", "clear", "copy",
+            # List methods
+            "append", "extend", "insert", "remove", "count", "index", "reverse", "sort",
+            # Set methods
+            "add", "discard", "union", "intersection", "difference", "symmetric_difference", "issubset", "issuperset",
+            # String methods
+            "split", "rsplit", "splitlines", "join", "strip", "lstrip", "rstrip", "replace", "startswith", "endswith",
+            "lower", "upper", "title", "capitalize", "casefold", "encode", "decode", "format", "format_map",
+            # File & I/O methods
+            "read", "write", "readline", "readlines", "writelines", "seek", "tell", "flush", "close",
+            # Path & OS methods
+            "exists", "is_file", "is_dir", "is_symlink", "resolve", "absolute", "stat", "lstat", "glob", "rglob",
+            "iterdir", "mkdir", "rmdir", "unlink", "rename", "read_text", "write_text", "read_bytes", "write_bytes",
+            "touch", "relative_to", "with_name", "with_suffix", "with_stem", "as_posix", "as_uri",
+            # Regex & Pattern methods
+            "findall", "finditer", "subn", "group", "groups", "groupdict", "start", "end", "span",
+            # Logging / Print
+            "info", "warning", "error", "debug", "critical", "exception", "log", "print",
+        }
+
         for rel_p, data in parsed_files.items():
             # Build import map for this file: imported_symbol_name -> target_node_id
             imported_symbols_map: Dict[str, str] = {}
+            # Also track imported classes: class_name -> (target_file, class_name)
+            imported_classes_map: Dict[str, Tuple[str, str]] = {}
             current_dir = Path(rel_p).parent
 
             for imp in data.imports:
@@ -279,6 +311,23 @@ class GraphBuilder:
                         # Check class in target file
                         elif sym in file_classes.get(target_f, {}):
                             imported_symbols_map[sym] = file_classes[target_f][sym]
+                            imported_classes_map[sym] = (target_f, sym)
+                        # Re-exported / unique symbol lookup
+                        elif sym in all_symbols_by_name:
+                            candidates = all_symbols_by_name[sym]
+                            if len(candidates) == 1:
+                                cand_id = candidates[0]
+                                imported_symbols_map[sym] = cand_id
+                                cand_node = store.get_node(cand_id)
+                                if cand_node and cand_node.node_type == NodeType.CLASS:
+                                    imported_classes_map[sym] = (cand_node.file_path, cand_node.name)
+
+            # In-scope classes for this file (defined in this file or imported into this file)
+            in_scope_classes: List[Tuple[str, str]] = []
+            for cls_name in file_classes.get(rel_p, {}):
+                in_scope_classes.append((rel_p, cls_name))
+            for sym, (t_f, c_name) in imported_classes_map.items():
+                in_scope_classes.append((t_f, c_name))
 
             # Resolve each call site
             for call in data.calls:
@@ -298,23 +347,45 @@ class GraphBuilder:
                     if callee_name in methods_in_cls and (call.receiver == "self" or call.receiver is None):
                         resolved_callee_id = methods_in_cls[callee_name]
 
-                # 2. Same file function
-                if not resolved_callee_id and rel_p in file_functions:
-                    if callee_name in file_functions[rel_p]:
+                # 2. Direct same-file function
+                if not resolved_callee_id and (call.receiver is None or call.call_type == "direct"):
+                    if rel_p in file_functions and callee_name in file_functions[rel_p]:
                         resolved_callee_id = file_functions[rel_p][callee_name]
 
-                # 3. Imported symbol in this file
-                if not resolved_callee_id:
+                # 3. Direct imported symbol in this file
+                if not resolved_callee_id and (call.receiver is None or call.call_type == "direct"):
                     if callee_name in imported_symbols_map:
                         resolved_callee_id = imported_symbols_map[callee_name]
 
-                # 4. Known unique project symbol (only if single match across the project to avoid ambiguity)
-                if not resolved_callee_id and callee_name in all_symbols_by_name:
-                    candidates = all_symbols_by_name[callee_name]
-                    if len(candidates) == 1:
-                        resolved_callee_id = candidates[0]
+                # 4. Method call on an object / receiver (e.g. self.scanner.scan, store.add_node, ProjectScanner.scan, GraphBuilder().build)
+                if not resolved_callee_id and call.receiver is not None and callee_name not in BUILTIN_METHOD_NAMES:
+                    # Clean receiver: remove invocation parentheses and take trailing identifier
+                    rec_clean = call.receiver.replace("()", "").split(".")[-1].strip()
+                    for (c_file, c_name) in in_scope_classes:
+                        if rec_clean.lower() == c_name.lower() or rec_clean.lower() in c_name.lower() or c_name.lower() in rec_clean.lower():
+                            if (c_file, c_name) in class_methods and callee_name in class_methods[(c_file, c_name)]:
+                                resolved_callee_id = class_methods[(c_file, c_name)][callee_name]
+                                break
 
-                # 5. Add CALLS edge if successfully resolved (do NOT create fake nodes for unresolved calls)
+                    # If not matched by receiver name, check if exactly one in-scope class defines this method
+                    if not resolved_callee_id:
+                        in_scope_candidates = []
+                        for (c_file, c_name) in in_scope_classes:
+                            if (c_file, c_name) in class_methods and callee_name in class_methods[(c_file, c_name)]:
+                                in_scope_candidates.append(class_methods[(c_file, c_name)][callee_name])
+                        if len(in_scope_candidates) == 1:
+                            resolved_callee_id = in_scope_candidates[0]
+
+                # 5. Direct call to known unique project function or class (only if not a built-in method name)
+                if not resolved_callee_id and (call.receiver is None or call.call_type == "direct") and callee_name not in BUILTIN_METHOD_NAMES:
+                    if callee_name in all_symbols_by_name:
+                        candidates = all_symbols_by_name[callee_name]
+                        if len(candidates) == 1:
+                            cand_node = store.get_node(candidates[0])
+                            if cand_node and cand_node.node_type in (NodeType.FUNCTION, NodeType.CLASS):
+                                resolved_callee_id = candidates[0]
+
+                # 6. Add CALLS edge if successfully resolved (do NOT create fake nodes for unresolved calls)
                 if resolved_callee_id and store.get_node(resolved_callee_id):
                     store.add_edge(GraphEdge(
                         source_id=caller_id,

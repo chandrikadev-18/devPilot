@@ -224,3 +224,48 @@ def test_get_impact_on_project_graph():
     assert "app/agent/tools.py" in impact["impacted_files"]
     assert "app/main.py" in impact["impacted_files"]
 
+
+def test_graphbuilder_build_dependencies_accuracy():
+    """
+    Regression test verifying dependencies of GraphBuilder.build:
+    - ProjectScanner.scan in app/scanner/scanner.py
+    - No false ToolRegistry.get
+    - No standard-library method false positives
+    - Exact call-site line numbers
+    """
+    project_root = Path(__file__).resolve().parent.parent
+    graph = GraphBuilder().build(project_root)
+
+    deps = get_dependencies(graph, "GraphBuilder.build", depth=1)
+    dep_items = deps["dependencies"]
+    dep_names = {d["name"] for d in dep_items}
+    dep_files = {d["file_path"] for d in dep_items}
+    dep_ids = {d["id"] for d in dep_items}
+
+    # 1. Verify ProjectScanner.scan is from app/scanner/scanner.py
+    assert "scan" in dep_names
+    scan_dep = next(d for d in dep_items if d["name"] == "scan")
+    assert scan_dep["file_path"] == "app/scanner/scanner.py"
+    assert scan_dep["call_line"] == 55
+    assert scan_dep["node_type"] == "METHOD"
+
+    # 2. Verify ASTExtractor.extract_file
+    assert "extract_file" in dep_names
+    extract_dep = next(d for d in dep_items if d["name"] == "extract_file")
+    assert extract_dep["file_path"] == "app/graph/extractor.py"
+    assert extract_dep["call_line"] == 68
+
+    # 3. Verify GraphStore constructor
+    assert "GraphStore" in dep_names
+    store_cls_dep = next(d for d in dep_items if d["name"] == "GraphStore" and d["node_type"] == "CLASS")
+    assert store_cls_dep["file_path"] == "app/graph/store.py"
+    assert store_cls_dep["call_line"] == 46
+
+    # 4. Verify no false ToolRegistry.get dependency
+    assert not any("ToolRegistry" in d_id or "tool_registry.py" in d_file for d_id, d_file in zip(dep_ids, dep_files))
+
+    # 5. Verify all call lines are valid positive integers
+    for d in dep_items:
+        assert isinstance(d["call_line"], int) and d["call_line"] > 0
+
+
