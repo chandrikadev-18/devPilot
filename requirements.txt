@@ -5,3 +5,5 @@ sentence-transformers
 qdrant-client
 groq
 GitPython>=3.1.40
+fastapi>=0.115.0
+uvicorn>=0.30.0

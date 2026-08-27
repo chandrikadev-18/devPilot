@@ -8,7 +8,7 @@ and source citation tracking for codebase exploration.
 import json
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from app.agent.intent import QuestionIntent, classify_question_intent
 from app.agent.state import AgentResult, AgentState
