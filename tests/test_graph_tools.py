@@ -387,3 +387,77 @@ def caller_func():
         assert "scan" in result.answer
         assert "No direct callers found" not in result.answer
 
+
+def test_agent_dependencies_query_no_callers_and_accurate_deps():
+    """
+    Verifies that when asked 'What does GraphBuilder.build depend on?':
+    1. Intent is DEPENDENCIES.
+    2. Preferred tools are find_symbol -> get_dependencies.
+    3. The final answer contains dependencies table and purpose, with NO callers or 'Used by' section.
+    """
+    from app.agent import create_codebase_agent
+    from app.agent.intent import classify_question_intent, QuestionIntent
+    from app.search.semantic_search import SemanticSearcher
+
+    question = "What does GraphBuilder.build depend on?"
+    classification = classify_question_intent(question)
+    assert classification.intent == QuestionIntent.DEPENDENCIES
+    assert classification.target_symbol == "GraphBuilder.build"
+    assert classification.preferred_tools == ["find_symbol", "get_dependencies"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        (root / "builder.py").write_text("""
+class GraphBuilder:
+    def build(self):
+        self.scan()
+        return "done"
+
+    def scan(self):
+        pass
+""", encoding="utf-8")
+
+        mock_searcher = MagicMock(spec=SemanticSearcher)
+
+        step1 = LLMChatResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="c_find",
+                    name="find_symbol",
+                    arguments={"symbol_name": "GraphBuilder.build"},
+                )
+            ],
+        )
+        step2 = LLMChatResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="c_deps",
+                    name="get_dependencies",
+                    arguments={"symbol": "GraphBuilder.build", "depth": 1},
+                ),
+            ],
+        )
+        step3 = LLMChatResponse(
+            content="",
+            tool_calls=[],
+        )
+
+        mock_llm = MockLLM([step1, step2, step3])
+        agent = create_codebase_agent(
+            llm=mock_llm,
+            searcher=mock_searcher,
+            project_root=root,
+        )
+
+        result = agent.run(question)
+        tool_names = [tc["tool"] for tc in result.tool_calls]
+        assert "find_symbol" in tool_names
+        assert "get_dependencies" in tool_names
+        assert "Direct Dependencies" in result.answer
+        assert "Callers" not in result.answer
+        assert "Used by" not in result.answer
+        assert "Impacted" not in result.answer
+
+

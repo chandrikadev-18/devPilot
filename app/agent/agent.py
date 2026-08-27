@@ -518,6 +518,24 @@ class CodebaseAgent:
                     "Do NOT state 'No callers found' unless get_callers returned an empty list. "
                     "Keep the answer concise and grounded strictly in the tool outputs. Do not output <think> tags or raw tool syntax."
                 )
+            elif classification.intent == QuestionIntent.DEPENDENCIES:
+                synthesis_instruction = (
+                    "Please synthesize a clear, concise, and structured Dependency Analysis based strictly on the retrieved dependency graph findings above. "
+                    "Follow this structure:\n\n"
+                    f"**Symbol:** `{resolved_symbol_context.get('canonical_name') or classification.target_symbol or 'Symbol'}`\n"
+                    f"**File:** `{resolved_symbol_context.get('file_path') or ''}`\n"
+                    f"**Lines:** {resolved_symbol_context.get('start_line', '')}–{resolved_symbol_context.get('end_line', '')}\n\n"
+                    "### Purpose\n<Brief description of what this symbol does>\n\n"
+                    "### Direct Dependencies\n\n"
+                    "| Dependency | Type | Source Location | Call Site Line |\n"
+                    "|---|---|---|---|\n"
+                    "| `<SymbolName>` | `<CLASS/METHOD/FUNCTION>` | `<file_path>` | `<line_number>` |\n\n"
+                    "CRITICAL RULES:\n"
+                    "- List ONLY the dependencies returned by the tool output. Do NOT invent, guess, or hallucinate dependencies or languages.\n"
+                    "- Never include uncertain or guessed line numbers (such as '20?' or 'unknown'). Use the exact call_line from the tool output.\n"
+                    "- Do NOT include a callers, 'Used by', or 'Impact' section (only dependencies were requested).\n"
+                    "- Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
             else:
                 synthesis_instruction = (
                     "Please synthesize a clear, concise, and structured final answer to the question based on the retrieved codebase findings above. "
@@ -735,16 +753,31 @@ class CodebaseAgent:
                 data = res.get("data")
                 if isinstance(data, dict) and "dependencies" in data:
                     sym = ctx.get("canonical_name") or data.get("symbol", "Symbol")
+                    f_path = ctx.get("file_path") or ""
+                    s_line = ctx.get("start_line") or 1
+                    e_line = ctx.get("end_line") or s_line
                     deps = data.get("dependencies", [])
+
                     lines = [
-                        "Analysis:",
-                        f"Symbol: {sym}",
+                        f"**Symbol:** `{sym}`",
+                        f"**File:** `{f_path}`",
+                        f"**Lines:** {s_line}–{e_line}",
                         "",
-                        f"Dependencies ({len(deps)}):",
+                        "### Purpose",
+                        f"Constructs or executes `{sym}` and coordinates dependent operations across the codebase.",
+                        "",
+                        f"### Direct Dependencies ({len(deps)})",
+                        "",
+                        "| Dependency | Type | Source Location | Call Site Line |",
+                        "|---|---|---|---|",
                     ]
-                    for idx, d in enumerate(deps, 1):
-                        line_str = f":{d['start_line']}" if d.get("start_line") else ""
-                        lines.append(f"{idx}. {d['name']} ({d['file_path']}{line_str})")
+                    for d in deps:
+                        q_name = d.get("qualified_name") or d.get("name", "")
+                        d_type = d.get("node_type", "FUNCTION")
+                        d_file = d.get("file_path", "")
+                        c_line = d.get("call_line", "")
+                        lines.append(f"| `{q_name}` | {d_type} | `{d_file}` | {c_line} |")
+
                     lines.append("")
                     lines.append("Sources:")
                     for d in deps[:5]:
