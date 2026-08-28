@@ -134,3 +134,34 @@ class CommitDetail:
             "diff_summary": self.diff_summary,
             "truncated": self.truncated,
         }
+
+
+@dataclass
+class SymbolLastChangeResult:
+    """
+    Structured result of the last Git change affecting a specific symbol or file.
+    """
+    symbol: str
+    commit: str
+    short_hash: str
+    author: str
+    date: str
+    message: str
+    file: str
+    line: Optional[int] = None
+    end_line: Optional[int] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts SymbolLastChangeResult to a clean serializable dictionary."""
+        return {
+            "symbol": self.symbol,
+            "commit": self.commit,
+            "short_hash": self.short_hash,
+            "author": self.author,
+            "date": self.date,
+            "message": self.message,
+            "file": self.file,
+            "line": self.line,
+            "end_line": self.end_line,
+        }
+

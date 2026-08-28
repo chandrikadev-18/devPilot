@@ -7,11 +7,15 @@ file change tracking, and blame inspection.
 
 from app.git.history import (
     MAX_DIFF_CHARACTERS,
+    get_blame_for_symbol,
     get_commit_detail,
     get_file_blame,
     get_file_history,
+    get_history_for_symbol,
+    get_last_change_for_symbol,
     get_last_commit_for_file,
     get_recent_commits,
+    resolve_symbol_location,
 )
 from app.git.models import (
     BlameLine,
@@ -19,6 +23,7 @@ from app.git.models import (
     CommitDetail,
     CommitInfo,
     FileHistoryResult,
+    SymbolLastChangeResult,
 )
 from app.git.repository import (
     GitBlameError,
@@ -48,9 +53,14 @@ __all__ = [
     "BlameLine",
     "BlameResult",
     "CommitDetail",
+    "SymbolLastChangeResult",
     "get_recent_commits",
     "get_file_history",
     "get_last_commit_for_file",
     "get_commit_detail",
     "get_file_blame",
+    "resolve_symbol_location",
+    "get_last_change_for_symbol",
+    "get_history_for_symbol",
+    "get_blame_for_symbol",
 ]

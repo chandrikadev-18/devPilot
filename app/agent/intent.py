@@ -13,6 +13,12 @@ from typing import List, Optional
 
 class QuestionIntent(str, Enum):
     IMPACT = "IMPACT"
+    CODE_CHANGE_ANALYSIS = "CODE_CHANGE_ANALYSIS"
+    GIT_CHANGE_AND_IMPACT = "GIT_CHANGE_AND_IMPACT"
+    GIT_LAST_CHANGE = "GIT_LAST_CHANGE"
+    GIT_HISTORY = "GIT_HISTORY"
+    GIT_BLAME = "GIT_BLAME"
+    GIT_SHOW_COMMIT = "GIT_SHOW_COMMIT"
     CALLERS_AND_CALLEES = "CALLERS_AND_CALLEES"
     CALLEES = "CALLEES"
     CALLERS = "CALLERS"
@@ -22,6 +28,7 @@ class QuestionIntent(str, Enum):
     DEFINITION = "DEFINITION"
     EXPLANATION = "EXPLANATION"
     REPOSITORY_CONTEXT = "REPOSITORY_CONTEXT"
+    SEMANTIC_SEARCH = "SEMANTIC_SEARCH"
     SEARCH = "SEARCH"
 
 
@@ -56,6 +63,117 @@ def classify_question_intent(question: str) -> IntentClassification:
 
     q = question.strip()
     q_lower = q.lower()
+
+    # 0. CODE_CHANGE_ANALYSIS Intent (v1.7)
+    code_change_patterns = [
+        (r"(?:what|which\s+symbols?)\s+changed\s+in\s+(?:the\s+)?(?:last|latest)\s+commit", "HEAD"),
+        (r"(?:what|which\s+symbols?)\s+changed\s+in\s+commit\s+([a-fA-F0-9]{4,40}|HEAD)", None),
+        (r"(?:what\s+could|what\s+can|what\s+might|what\s+breaks|what\s+would)\s+(?:the\s+)?(?:latest|last|this)?\s*commit\s*(?:break|affect|impact)", "HEAD"),
+        (r"what\s+could\s+be\s+affected\s+by\s+(?:the\s+changes\s+in\s+)?(?:the\s+)?(?:latest|last|this)?\s*commit", "HEAD"),
+        (r"(?:what\s+functions|what\s+symbols|what\s+classes)\s+are\s+affected\s+by\s+(?:this|the\s+latest|the\s+last)?\s*(?:change|commit)", "HEAD"),
+        (r"is\s+(?:the\s+)?(?:latest|last|this)?\s*commit\s+risky", "HEAD"),
+        (r"(?:show\s+me\s+)?(?:the\s+)?impact\s+of\s+(?:the\s+)?(?:latest|last|this)\s+(?:change|commit)", "HEAD"),
+        (r"which\s+parts\s+of\s+the\s+project\s+are\s+impacted(?:\s+by\s+(?:the\s+)?(?:latest|last|this)?\s*commit)?", "HEAD"),
+        (r"why\s+is\s+(?:this|the\s+latest|the\s+last)\s+commit\s+important", "HEAD"),
+        (r"who\s+changed\s+the\s+code\s+and\s+what\s+did\s+(?:their|the)\s+change\s+affect", "HEAD"),
+    ]
+    for pat, default_commit in code_change_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            c_val = m.group(1).strip() if m.groups() and m.group(1) else default_commit
+            return IntentClassification(
+                intent=QuestionIntent.CODE_CHANGE_ANALYSIS,
+                target_symbol=c_val,
+                preferred_tools=["analyze_code_change"],
+            )
+
+    # 1. GIT_CHANGE_AND_IMPACT Intent
+    # "What changed around X and what could be affected?", "What changed in X and what could break?"
+    git_impact_patterns = [
+        r"what\s+changed\s+(?:around|in|to)\s+(?:the\s+)?([a-zA-Z0-9_.]+?)\s+and\s+what\s+(?:could|would|might|can)?\s*(?:be\s+affected|break)",
+        r"what\s+changed\s+(?:around|in|to)\s+(?:the\s+)?([a-zA-Z0-9_.]+?)\s+and\s+its\s+impact",
+        r"impact\s+of\s+changes?\s+(?:to|in|around)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+    ]
+    for pat in git_impact_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym = _clean_symbol_candidate(m.group(1))
+            return IntentClassification(
+                intent=QuestionIntent.GIT_CHANGE_AND_IMPACT,
+                target_symbol=sym,
+                preferred_tools=["find_symbol", "git_last_change", "get_impact"],
+            )
+
+    # 2. GIT_LAST_CHANGE Intent
+    # "Who last changed X?", "When was X modified?", "Who introduced X?"
+    last_change_patterns = [
+        r"who\s+(?:last\s+)?(?:changed|modified|updated|edited|touched)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"who\s+(?:introduced|added|created)\s+(?:the\s+)?(?:current\s+implementation\s+of\s+)?([a-zA-Z0-9_.]+)",
+        r"when\s+was\s+(?:the\s+)?([a-zA-Z0-9_.]+?)\s+(?:last\s+)?(?:changed|modified|updated|created|introduced)",
+        r"what\s+commit\s+(?:introduced|added|created|modified|changed)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"last\s+change\s+(?:to|for|in|of)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+    ]
+    for pat in last_change_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym = _clean_symbol_candidate(m.group(1))
+            return IntentClassification(
+                intent=QuestionIntent.GIT_LAST_CHANGE,
+                target_symbol=sym,
+                preferred_tools=["find_symbol", "git_last_change"],
+            )
+
+    # 3. GIT_HISTORY Intent
+    # "Show me the history of X", "Commit history of X"
+    history_patterns = [
+        r"(?:show|get|display|view)\s+(?:me\s+)?(?:the\s+)?history\s+(?:of\s+changes\s+for|of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"(?:commit|git|change)\s+history\s+(?:of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"history\s+(?:of\s+changes\s+for|of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+    ]
+    for pat in history_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym = _clean_symbol_candidate(m.group(1))
+            return IntentClassification(
+                intent=QuestionIntent.GIT_HISTORY,
+                target_symbol=sym,
+                preferred_tools=["find_symbol", "git_history"],
+            )
+
+    # 4. GIT_BLAME Intent
+    # "Who wrote X?", "Who is the likely owner/contributor of X?"
+    blame_patterns = [
+        r"who\s+(?:wrote|authored)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"who\s+is\s+the\s+(?:likely\s+)?(?:owner|author|contributor)\s+(?:of|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"who\s+owns\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"blame\s+(?:for|of|on)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+    ]
+    for pat in blame_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym = _clean_symbol_candidate(m.group(1))
+            return IntentClassification(
+                intent=QuestionIntent.GIT_BLAME,
+                target_symbol=sym,
+                preferred_tools=["find_symbol", "git_blame_symbol"],
+            )
+
+    # 5. GIT_SHOW_COMMIT Intent
+    # "What changed in commit X?", "Show commit X"
+    show_commit_patterns = [
+        r"(?:what\s+changed\s+in|show|details\s+of|inspect)\s+commit\s+([a-fA-F0-9]{4,40}|HEAD|\^[\w]+)",
+        r"which\s+files\s+were\s+changed\s+by\s+(?:commit\s+)?([a-fA-F0-9]{4,40})",
+        r"commit\s+([a-fA-F0-9]{7,40})\s+(?:details|summary|changes)",
+    ]
+    for pat in show_commit_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            c_hash = m.group(1).strip()
+            return IntentClassification(
+                intent=QuestionIntent.GIT_SHOW_COMMIT,
+                target_symbol=c_hash,
+                preferred_tools=["git_show_commit"],
+            )
 
     # 1. IMPACT Intent
     # "What could be affected if X changes?", "What is the impact of changing X?", "What breaks if X changes?"
@@ -223,7 +341,7 @@ def classify_question_intent(question: str) -> IntentClassification:
         r"^explain\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?$",
         r"explain\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class|\s+module)",
         r"what\s+does\s+(?:the\s+)?([a-zA-Z0-9_.]+?)\s+(?:do|perform)",
-        r"how\s+does\s+(?:the\s+)?([a-zA-Z0-9_.]+?)\s+work",
+        r"how\s+does\s+(?:the\s+)?([a-zA-Z0-9_.]+?)\s+work$",
     ]
     for pat in explain_patterns:
         m = re.search(pat, q, re.IGNORECASE)
@@ -235,9 +353,33 @@ def classify_question_intent(question: str) -> IntentClassification:
                 preferred_tools=["find_symbol", "read_file"],
             )
 
+    # 10. SEMANTIC_SEARCH Intent (v1.8)
+    semantic_patterns = [
+        r"where\s+is\s+(.+?)\s+handled",
+        r"where\s+(?:do\s+we|can\s+we)\s+handle\s+(.+)",
+        r"where\s+are\s+(.+?)\s+(?:validated|handled|processed|managed)",
+        r"where\s+is\s+(.+?)\s+(?:implemented|located|found)",
+        r"find\s+code\s+related\s+to\s+(.+)",
+        r"find\s+(?:the\s+)?implementation\s+(?:related\s+to|responsible\s+for|for)\s+(.+)",
+        r"which\s+code\s+is\s+responsible\s+for\s+(.+)",
+        r"which\s+(?:code|part\s+of\s+the\s+code)\s+handles\s+(.+)",
+        r"how\s+does\s+(?:the\s+)?(.+?)\s+(?:get\s+built|get\s+created|work)",
+        r"show\s+(?:me\s+)?code\s+related\s+to\s+(.+)",
+        r"show\s+(?:me\s+)?(?:the\s+)?implementation\s+(?:of|for|related\s+to)\s+(.+)",
+    ]
+    for pat in semantic_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            query_topic = m.group(1).strip().strip("'\"`?,.:;")
+            return IntentClassification(
+                intent=QuestionIntent.SEMANTIC_SEARCH,
+                target_symbol=query_topic,
+                preferred_tools=["semantic_code_search"],
+            )
+
     # Fallback to general SEARCH
     return IntentClassification(
         intent=QuestionIntent.SEARCH,
-        preferred_tools=["search_code", "read_file"],
+        preferred_tools=["semantic_code_search", "search_code", "read_file"],
     )
 

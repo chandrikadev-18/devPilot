@@ -8,21 +8,16 @@ class PythonParser:
         self.lang = Language(tree_sitter_python.language())
         self.parser = Parser(self.lang)
 
-    def parse_file(self, filepath: str | Path) -> dict:
-        path = Path(filepath)
-        if not path.is_file():
-            raise FileNotFoundError(f"File not found: {path}")
+    def parse_code(self, source: str | bytes, filepath: str = "snippet.py") -> dict:
+        if isinstance(source, str):
+            source_bytes = source.encode("utf-8")
+        else:
+            source_bytes = source
 
-        try:
-            with open(path, "rb") as f:
-                source = f.read()
-        except Exception as e:
-            return {'error': str(e), 'file': str(path)}
-
-        tree = self.parser.parse(source)
+        tree = self.parser.parse(source_bytes)
         
         results = {
-            'file': str(path),
+            'file': str(filepath),
             'classes': [],
             'functions': [],
             'methods': [],
@@ -80,6 +75,20 @@ class PythonParser:
 
         traverse(tree.root_node)
         return results
+
+    def parse_file(self, filepath: str | Path) -> dict:
+        path = Path(filepath)
+        if not path.is_file():
+            raise FileNotFoundError(f"File not found: {path}")
+
+        try:
+            with open(path, "rb") as f:
+                source = f.read()
+        except Exception as e:
+            return {'error': str(e), 'file': str(path)}
+
+        return self.parse_code(source, str(path))
+
 
     def parse_directory(self, directory: str | Path) -> list:
         root_path = Path(directory).resolve()

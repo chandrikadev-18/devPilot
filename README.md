@@ -105,24 +105,86 @@ Final Grounded Answer + Separate Source Citations
   - Strictly forbidden: `git commit`, `git push`, `git pull`, `git checkout`, `git reset`, `git merge`, `git rebase`, or branch creation.
   - Path traversal (`../`) and external repository access outside project directory are strictly blocked.
 
-```text
-Git Intelligence Architecture:
+### DevPilot v1.6 — Git Intelligence Layer
+* **Unified Symbol + Git Intelligence**: Seamlessly resolves symbols (e.g. `GraphBuilder.build`) to source files and AST line ranges, tracing commit history and line authorship.
+* **New Agent Tools**:
+  1. `git_last_change`: Pinpoints the author, date, short hash, and commit message that last changed a specific symbol or file.
+  2. `git_history`: Queries chronological commit histories affecting symbols or files.
+  3. `git_blame_symbol`: Performs line-by-line blame analysis targeted specifically at a symbol definition to identify primary contributors and line authorship.
+  4. `git_show_commit`: Inspects commit metadata, additions, deletions, changed files, and diff summary for a specific commit SHA or revision.
+* **Combined Git History + Impact Analysis**: Answers questions such as *"What changed around GraphBuilder.build and what could be affected?"* by combining Git change tracking with upstream/downstream dependency impact graphs.
+* **REST API Endpoints**:
+  - `GET /api/git/last-change?symbol=...`
+  - `GET /api/git/history?symbol=...&limit=...`
+  - `GET /api/git/blame?symbol=...`
+  - `GET /api/git/commit/{commit}`
+* **CLI Subcommands**:
+  - `python -m app.main git-last-change "GraphBuilder.build"`
+  - `python -m app.main git-history "GraphBuilder.build"`
+  - `python -m app.main git-blame "GraphBuilder.build"`
+  - `python -m app.main git-show <commit>`
 
-      User Question
-           ↓
-         Agent
-           ↓
-  Code Search / Git Tools
-  (search_code, find_symbol, read_file,
-   get_file_history, get_commit, get_file_blame)
-           ↓
-      Tool Results
-  (Code Chunks + Commit Metadata + Diffs)
-           ↓
-          LLM
-  (Evidence-Based Grounded Synthesis)
-           ↓
-  Grounded Answer + Citations
+### DevPilot v1.7 — Code Change Intelligence & Smart Impact Analysis
+* **Git Changes to Symbol Mapping**: Analyzes Git commit diffs to pinpoint added, modified, deleted, and renamed AST symbols (functions, methods, classes) and changed line spans.
+* **Dependency Graph Impact**: Traverses direct and indirect reverse dependencies to find all callers and dependent modules affected by a commit.
+* **Deterministic Risk Scoring**: Transparent formula evaluates change severity (0–100 score, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` levels) based on symbol counts, deletions, dependency depths, module sensitivity, and test coverage.
+* **Agent Change Tool**:
+  - `analyze_code_change`: Evaluates commit diffs, changed symbols, impact, and risk score for autonomous agent reasoning.
+* **REST API Endpoints**:
+  - `POST /api/changes/analyze`
+  - `GET /api/changes/analyze?commit=...`
+* **CLI Subcommand**:
+  - `python -m app.main change-analyze HEAD`
+  - `python -m app.main change-analyze <commit> --json`
+
+```text
+Code Change Intelligence Architecture:
+
+      Git Commit
+          ↓
+    Changed Symbols (AST parsing before vs after)
+          ↓
+    Dependency Graph (Static Callers / Dependents Traversal)
+          ↓
+    Impact Analysis (Direct/Indirect Callers & Impacted Files)
+          ↓
+    Deterministic Risk Score (0-100 & LOW/MEDIUM/HIGH/CRITICAL)
+          ↓
+    AI Agent Explanation
+```
+
+### DevPilot v1.8 — Semantic Code Intelligence
+* **Natural Language Code Search**: Formulate questions using concepts, architecture, and intent (e.g. *"Where is authentication handled?"*, *"Find code related to database connections"*).
+* **Hybrid Retrieval Engine**: Combines vector cosine similarity with exact/fuzzy AST symbol matching, filename weighting, and deterministic ranking.
+* **Semantic Search + Dependency Graph**: Discovers primary implementation symbols and enriches results with callers, callees, and architectural relationships.
+* **Agent Semantic Tool**:
+  - `semantic_code_search`: Retrieves ranked code symbols, file locations, line ranges, and connected graph functionality.
+* **REST API Endpoints**:
+  - `POST /api/search/semantic` (body: `{"query": "...", "top_k": 5}`)
+  - `GET /api/search/semantic?query=...&top_k=5`
+* **CLI Subcommand**:
+  - `python -m app.main semantic-search "database connection"`
+  - `python -m app.main semantic-search "authentication" --json`
+
+```text
+Semantic Code Intelligence Architecture:
+
+      Natural Language Query
+                ↓
+          Hybrid Search
+         ┌──────┴──────┐
+         ↓             ↓
+      Symbol        Semantic
+      Search         Search
+         └──────┬──────┘
+                ↓
+         Relevant Symbols
+                ↓
+        Dependency Graph
+                ↓
+        Context Retrieval
+                ↓
+        Agent Explanation
 ```
 
 ---

@@ -12,6 +12,7 @@ from app.agent.state import AgentResult, AgentState
 from app.agent.tool_registry import Tool, ToolRegistry, ToolValidationError
 from app.agent.tools import (
     SecurityError,
+    create_analyze_code_change_tool,
     create_find_symbol_tool,
     create_get_callees_tool,
     create_get_callers_tool,
@@ -26,8 +27,13 @@ from app.agent.tools import (
     create_get_last_commit_tool,
     create_get_recent_commits_tool,
     create_get_repository_context_tool,
+    create_git_blame_symbol_tool,
+    create_git_history_tool,
+    create_git_last_change_tool,
+    create_git_show_commit_tool,
     create_read_file_tool,
     create_search_code_tool,
+    create_semantic_code_search_tool,
     resolve_safe_path,
 )
 from app.llm.base import LLMProvider
@@ -115,6 +121,30 @@ def create_default_tool_registry(
     repo_ctx_spec = create_get_repository_context_tool(project_root=root)
     registry.register(Tool(**repo_ctx_spec))
 
+    # 17. git_last_change (v1.6)
+    git_last_change_spec = create_git_last_change_tool(project_root=root)
+    registry.register(Tool(**git_last_change_spec))
+
+    # 18. git_history (v1.6)
+    git_history_spec = create_git_history_tool(project_root=root)
+    registry.register(Tool(**git_history_spec))
+
+    # 19. git_blame_symbol (v1.6)
+    git_blame_sym_spec = create_git_blame_symbol_tool(project_root=root)
+    registry.register(Tool(**git_blame_sym_spec))
+
+    # 20. git_show_commit (v1.6)
+    git_show_commit_spec = create_git_show_commit_tool(project_root=root)
+    registry.register(Tool(**git_show_commit_spec))
+
+    # 21. analyze_code_change (v1.7)
+    analyze_change_spec = create_analyze_code_change_tool(project_root=root)
+    registry.register(Tool(**analyze_change_spec))
+
+    # 22. semantic_code_search (v1.8)
+    semantic_search_spec = create_semantic_code_search_tool(searcher=searcher, project_root=root)
+    registry.register(Tool(**semantic_search_spec))
+
     return registry
 
 
@@ -170,4 +200,10 @@ __all__ = [
     "create_get_impact_tool",
     "create_get_file_dependencies_tool",
     "create_get_repository_context_tool",
+    "create_git_last_change_tool",
+    "create_git_history_tool",
+    "create_git_blame_symbol_tool",
+    "create_git_show_commit_tool",
+    "create_analyze_code_change_tool",
+    "create_semantic_code_search_tool",
 ]

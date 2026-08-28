@@ -824,6 +824,271 @@ def create_get_file_blame_tool(
     }
 
 
+def create_git_last_change_tool(
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for git_last_change tool."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def git_last_change(symbol: str) -> Dict[str, Any]:
+        """Returns the most recent Git commit, author, date, and commit message affecting a symbol or file."""
+        from app.git.history import get_last_change_for_symbol
+        from app.git.repository import NotAGitRepositoryError, get_repository
+
+        try:
+            repo = get_repository(root)
+        except NotAGitRepositoryError:
+            return {
+                "data": "This project is not a Git repository.",
+                "sources": [],
+            }
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            last_change = get_last_change_for_symbol(repo=repo, symbol=symbol, project_root=root, graph=active_graph)
+        except Exception as e:
+            return {
+                "data": f"Could not retrieve last change for '{symbol}': {str(e)}",
+                "sources": [],
+            }
+
+        sources = [
+            {
+                "source_type": "git",
+                "symbol_name": symbol,
+                "commit_hash": last_change.commit,
+                "short_hash": last_change.short_hash,
+                "author": last_change.author,
+                "date": last_change.date,
+                "message": last_change.message,
+                "file_path": last_change.file,
+                "start_line": last_change.line,
+                "end_line": last_change.end_line,
+            }
+        ]
+
+        return {
+            "data": last_change.to_dict(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "git_last_change",
+        "description": "Returns the most recent Git commit, author, timestamp, message, and line number affecting a specific symbol or file.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Symbol name (e.g. 'GraphBuilder.build') or relative file path (e.g. 'app/graph/builder.py') to inspect last change for"},
+            },
+            "required": ["symbol"],
+        },
+        "func": git_last_change,
+        "safety_level": "read_only",
+    }
+
+
+def create_git_history_tool(
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for git_history tool."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def git_history(symbol: str, limit: int = 10) -> Dict[str, Any]:
+        """Returns structured commit history affecting a symbol or file."""
+        from app.git.history import get_history_for_symbol
+        from app.git.repository import NotAGitRepositoryError, get_repository
+
+        try:
+            repo = get_repository(root)
+        except NotAGitRepositoryError:
+            return {
+                "data": "This project is not a Git repository.",
+                "sources": [],
+            }
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            history_data = get_history_for_symbol(repo=repo, symbol=symbol, limit=limit, project_root=root, graph=active_graph)
+        except Exception as e:
+            return {
+                "data": f"Could not retrieve history for '{symbol}': {str(e)}",
+                "sources": [],
+            }
+
+        sources = [
+            {
+                "source_type": "git",
+                "symbol_name": symbol,
+                "commit_hash": c["commit_hash"],
+                "short_hash": c["short_hash"],
+                "author": c["author_name"],
+                "date": c["date"],
+                "message": c["message"],
+                "file_path": history_data["file"],
+            }
+            for c in history_data.get("commits", [])
+        ]
+
+        return {
+            "data": history_data,
+            "sources": sources,
+        }
+
+    return {
+        "name": "git_history",
+        "description": "Returns structured commit history affecting a specific symbol or file.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Symbol name (e.g. 'GraphBuilder.build') or relative file path to inspect history for"},
+                "limit": {"type": "integer", "minimum": 1, "description": "Maximum number of commits to return (default: 10)"},
+            },
+            "required": ["symbol"],
+        },
+        "func": git_history,
+        "safety_level": "read_only",
+    }
+
+
+def create_git_blame_symbol_tool(
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for git_blame_symbol tool."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def git_blame_symbol(
+        symbol: str,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Performs Git blame analysis specifically targeted at a symbol or file."""
+        from app.git.history import get_blame_for_symbol
+        from app.git.repository import NotAGitRepositoryError, get_repository
+
+        try:
+            repo = get_repository(root)
+        except NotAGitRepositoryError:
+            return {
+                "data": "This project is not a Git repository.",
+                "sources": [],
+            }
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            blame_data = get_blame_for_symbol(
+                repo=repo,
+                symbol=symbol,
+                start_line=start_line,
+                end_line=end_line,
+                project_root=root,
+                graph=active_graph,
+            )
+        except Exception as e:
+            return {
+                "data": f"Could not perform blame for '{symbol}': {str(e)}",
+                "sources": [],
+            }
+
+        seen_commits = set()
+        sources = []
+        for line in blame_data.get("lines", []):
+            if line["commit_hash"] not in seen_commits:
+                seen_commits.add(line["commit_hash"])
+                sources.append({
+                    "source_type": "git",
+                    "symbol_name": symbol,
+                    "commit_hash": line["commit_hash"],
+                    "short_hash": line["short_hash"],
+                    "author": line["author"],
+                    "date": line["date"],
+                    "file_path": blame_data["file"],
+                })
+
+        return {
+            "data": blame_data,
+            "sources": sources,
+        }
+
+    return {
+        "name": "git_blame_symbol",
+        "description": "Performs Git blame analysis for a specific symbol or file to identify authors, primary contributors, and line-level changes.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string", "description": "Symbol name (e.g. 'GraphBuilder.build') or file path to blame"},
+                "start_line": {"type": "integer", "minimum": 1, "description": "Optional starting line number"},
+                "end_line": {"type": "integer", "minimum": 1, "description": "Optional ending line number"},
+            },
+            "required": ["symbol"],
+        },
+        "func": git_blame_symbol,
+        "safety_level": "read_only",
+    }
+
+
+def create_git_show_commit_tool(
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for git_show_commit tool."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def git_show_commit(commit: str) -> Dict[str, Any]:
+        """Returns metadata, diff summary, and statistics for a specific commit hash or revision."""
+        from app.git.history import get_commit_detail
+        from app.git.repository import NotAGitRepositoryError, get_repository
+
+        try:
+            repo = get_repository(root)
+        except NotAGitRepositoryError:
+            return {
+                "data": "This project is not a Git repository.",
+                "sources": [],
+            }
+
+        try:
+            detail = get_commit_detail(repo=repo, commit_hash=commit)
+        except Exception as e:
+            return {
+                "data": f"Could not retrieve commit '{commit}': {str(e)}",
+                "sources": [],
+            }
+
+        sources = [
+            {
+                "source_type": "git",
+                "commit_hash": detail.commit_hash,
+                "short_hash": detail.short_hash,
+                "author": detail.author_name,
+                "date": detail.date,
+                "message": detail.message,
+                "files_changed": detail.files_changed,
+            }
+        ]
+
+        return {
+            "data": detail.to_dict(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "git_show_commit",
+        "description": "Returns metadata, diff summary, additions, deletions, and changed files for a specific Git commit hash or revision.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "commit": {"type": "string", "description": "Commit hash or revision (e.g. full SHA, short SHA, or HEAD)"},
+            },
+            "required": ["commit"],
+        },
+        "func": git_show_commit,
+        "safety_level": "read_only",
+    }
+
+
+
 _GRAPH_CACHE: Dict[str, Any] = {}
 
 
@@ -1257,4 +1522,148 @@ def create_get_repository_context_tool(
         "func": get_repository_context_tool,
         "safety_level": "read_only",
     }
+
+
+def create_analyze_code_change_tool(
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for analyze_code_change tool."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def analyze_code_change_tool(commit: str = "HEAD") -> Dict[str, Any]:
+        """Analyzes a Git commit for changed symbols, dependency graph impact, and deterministic risk score."""
+        from app.changes.analyzer import CodeChangeAnalyzer
+        from app.git.repository import NotAGitRepositoryError
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            analyzer = CodeChangeAnalyzer(project_root=root)
+            analysis = analyzer.analyze_commit(commit_hash=commit or "HEAD", graph=active_graph)
+        except NotAGitRepositoryError:
+            return {
+                "data": "This project is not a Git repository.",
+                "sources": [],
+            }
+        except Exception as e:
+            return {
+                "data": f"Could not analyze code changes for '{commit}': {str(e)}",
+                "sources": [],
+            }
+
+        sources = [
+            {
+                "source_type": "git",
+                "commit_hash": analysis.commit,
+                "short_hash": analysis.short_hash,
+                "author": analysis.author,
+                "date": analysis.date,
+                "message": analysis.message,
+                "files_changed": analysis.changed_files,
+            }
+        ]
+
+        for sym in analysis.changed_symbols:
+            sources.append({
+                "source_type": "symbol",
+                "symbol_name": sym.name,
+                "file_path": sym.file,
+                "start_line": sym.line_start,
+                "end_line": sym.line_end,
+                "relationship": f"CHANGED_{sym.change_type.upper()}",
+            })
+
+        return {
+            "data": analysis.to_dict(),
+            "formatted_text": analysis.to_formatted_text(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "analyze_code_change",
+        "description": "Analyzes a Git commit or revision to identify changed symbols, calculate dependency graph impact, and evaluate change risk.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "commit": {"type": "string", "description": "Git commit hash, short SHA, or revision (e.g. 'HEAD', 'main') to analyze"},
+            },
+        },
+        "func": analyze_code_change_tool,
+        "safety_level": "read_only",
+    }
+
+
+def create_semantic_code_search_tool(
+    searcher: Optional[SemanticSearcher] = None,
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for semantic_code_search tool (v1.8)."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def semantic_code_search_tool(query: str, top_k: int = 5) -> Dict[str, Any]:
+        """Performs natural language semantic search for code, functions, classes, and relationships."""
+        from app.search.hybrid_search import HybridCodeSearchEngine
+        from app.vector_store.qdrant_store import ValidationError
+
+        if not query or not query.strip():
+            return {
+                "data": "Search query cannot be empty.",
+                "sources": [],
+            }
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            engine = HybridCodeSearchEngine(
+                searcher=searcher,
+                project_root=root,
+                graph=active_graph,
+            )
+            output = engine.search(query=query, top_k=top_k)
+        except ValidationError as e:
+            return {
+                "data": str(e),
+                "sources": [],
+            }
+        except Exception as e:
+            return {
+                "data": f"Error performing semantic code search: {str(e)}",
+                "sources": [],
+            }
+
+        sources = []
+        for r in output.results:
+            sources.append({
+                "source_type": "symbol",
+                "symbol_name": r.symbol,
+                "file_path": r.file,
+                "symbol_type": r.symbol_type,
+                "start_line": r.start_line,
+                "end_line": r.end_line,
+                "score": round(r.score, 4),
+                "related_symbols": r.related_symbols,
+            })
+
+        return {
+            "data": output.to_dict(),
+            "formatted_text": output.to_formatted_text(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "semantic_code_search",
+        "description": "Performs semantic / meaning-based code search to find relevant functions, classes, files, and architectural flows for natural language questions.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language query describing what code you are looking for (e.g. 'Where is authentication handled?', 'database connections')"},
+                "top_k": {"type": "integer", "minimum": 1, "description": "Max results to return (default: 5)"},
+            },
+            "required": ["query"],
+        },
+        "func": semantic_code_search_tool,
+        "safety_level": "read_only",
+    }
+
+
 

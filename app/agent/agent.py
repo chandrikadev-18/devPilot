@@ -132,9 +132,87 @@ CRITICAL RULES & PRESENTATION FORMAT:
    - "What files does <file> depend on?": Use get_file_dependencies.
    - "Which tests cover <symbol>?" or repository context / test discovery: Use get_repository_context to gather unified context including tests, graph relationships, source definitions, and Git history.
 
-8. Workflow rules:
-   - Step 1: ALWAYS call find_symbol with symbol_name="<symbol>" first for symbol explanation or relationship questions (or get_repository_context when test coverage or multi-faceted context is requested).
-   - Step 2: If find_symbol returns an exact match, use the resolved canonical symbol directly for specialized graph tools (get_impact, get_callees, get_callers) or read_file.
+8. For Git intelligence questions:
+   - "Who last changed <symbol>?" / "When was <symbol> modified?" / "Who introduced <symbol>?":
+     First call find_symbol, then call git_last_change (with symbol="<symbol>").
+     Structure your final answer as:
+     <symbol> was last changed by <author> in commit <short-hash> on <date>.
+
+     Commit:
+     <commit message>
+
+     File:
+     <file_path> (line <start_line>)
+
+   - "What changed around <symbol> and what could be affected?":
+     First call find_symbol, then git_last_change, and get_impact.
+     Structure your final answer as:
+     <symbol> was last changed by <author> in commit <short-hash> on <date>.
+
+     Commit:
+     <commit message>
+
+     File:
+     <file_path>
+
+     Potential impact:
+     - <count> direct dependents
+     - <count> indirect dependents
+     - <count> affected files
+
+   - "Show the history of changes for <symbol>":
+     Use find_symbol then git_history. Present the list of commits with short hash, date, author, and message.
+
+   - "Who is the likely owner/contributor/author of <symbol>?":
+     Use find_symbol then git_blame_symbol. Present primary contributors and line authorship.
+
+   - "What changed in commit <commit>?":
+     Use git_show_commit. Present author, date, message, changed files, and diff summary.
+
+9. For Code Change Intelligence & Smart Impact questions (e.g. "What changed in the latest commit?", "What could be affected by the latest commit?", "Is the latest commit risky?"):
+   - Call analyze_code_change (with commit="HEAD" or target commit).
+   - Structure your final answer as:
+     The commit modified:
+     <changed_symbols_list>
+     <changed_files_list>
+
+     Direct impact:
+     - <direct_caller_1>
+     - <direct_caller_2>
+
+     Indirect impact:
+     - <indirect_caller_1>
+     - <indirect_caller_2>
+
+     Affected files:
+     <count>
+
+     Risk:
+     <Risk Level> (<Score>/100)
+
+     Reason:
+     <Primary risk reasons and architectural explanation>
+
+10. For Semantic & Meaning-Based Code Intelligence questions (e.g. "Where is authentication handled?", "Find code related to database connections", "Where are JWT tokens validated?", "Which code is responsible for building the dependency graph?"):
+   - Call semantic_code_search (with query="<query>").
+   - Structure your final answer as:
+     <Topic / Capability> is primarily handled in:
+
+     <file_path>
+       └── <primary_symbol>() (lines <start_line>-<end_line>)
+
+     Summary:
+     <Concise explanation of the implementation and responsibility>
+
+     Related functionality:
+       ├── <related_symbol_1>()
+       └── <related_symbol_2>()
+
+     These functions/methods are connected through the codebase dependency flow.
+
+11. Workflow rules:
+   - Step 1: ALWAYS call find_symbol with symbol_name="<symbol>" first for symbol explanation, relationship, or Git symbol questions (or semantic_code_search for natural-language concept queries, or analyze_code_change for commit impact questions, or git_show_commit directly for commit SHA queries).
+   - Step 2: If find_symbol returns an exact match, use the resolved canonical symbol directly for specialized graph tools (get_impact, get_callees, get_callers) or Git tools (git_last_change, git_history, git_blame_symbol).
    - Step 3: Do NOT execute broad search_code queries once a symbol is resolved.
    - Step 4: Synthesize the final structured answer immediately (target: 1-2 tool calls).
    - Avoid redundant searches or repeated calls for the same symbol or query.
@@ -517,6 +595,36 @@ class CodebaseAgent:
                     "### Recommendation\n\nChanges to this symbol should be tested against graph construction and dependent tools.\n\n"
                     "Keep the answer concise. Do not output <think> tags, internal reasoning, or raw tool syntax."
                 )
+            elif classification.intent == QuestionIntent.CODE_CHANGE_ANALYSIS:
+                synthesis_instruction = (
+                    "Please synthesize a clear, concise Code Change Intelligence and Risk Analysis following this structure:\n\n"
+                    "The commit modified:\n"
+                    "- <changed_symbol_or_file_1>\n"
+                    "- <changed_symbol_or_file_2>\n\n"
+                    "Direct impact:\n"
+                    "- <direct_caller_1>\n\n"
+                    "Indirect impact:\n"
+                    "- <indirect_caller_1>\n\n"
+                    "Affected files: <count>\n\n"
+                    "Risk: <Risk Level> (<Score>/100)\n\n"
+                    "Reason:\n"
+                    "- <reason_1>\n\n"
+                    "Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
+            elif classification.intent == QuestionIntent.SEMANTIC_SEARCH:
+                synthesis_instruction = (
+                    "Please synthesize a clear, structured Semantic Code Intelligence answer following this structure:\n\n"
+                    f"{classification.target_symbol or 'Requested functionality'} is primarily handled in:\n\n"
+                    f"{resolved_symbol_context.get('file_path') or '<file_path>'}\n"
+                    f"  └── {resolved_symbol_context.get('canonical_name') or '<primary_symbol>'}() (lines {resolved_symbol_context.get('start_line', 1)}–{resolved_symbol_context.get('end_line', '')})\n\n"
+                    "Summary:\n"
+                    "<Concise explanation of what this implementation does>\n\n"
+                    "Related functionality:\n"
+                    "  ├── <related_symbol_1>()\n"
+                    "  └── <related_symbol_2>()\n\n"
+                    "These functions/methods are connected through the codebase dependency flow.\n\n"
+                    "Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
             elif classification.intent == QuestionIntent.CALLERS_AND_CALLEES:
                 synthesis_instruction = (
                     "Please synthesize a clear, concise, and structured answer detailing both Callers and Callees. Follow this structure:\n\n"
@@ -597,6 +705,94 @@ class CodebaseAgent:
             classification = classify_question_intent(state.user_question)
 
         current_intent = getattr(classification, "intent", None)
+
+        # 0. Check for analyze_code_change results (v1.7)
+        if current_intent == QuestionIntent.CODE_CHANGE_ANALYSIS:
+            for res in state.tool_results:
+                fmt = res.get("formatted_text")
+                if fmt:
+                    return fmt
+                d = res.get("data")
+                if isinstance(d, dict) and "commit" in d:
+                    syms = d.get("changed_symbols", [])
+                    files = d.get("changed_files", [])
+                    imp = d.get("impact", {})
+                    risk = d.get("risk", {})
+                    lines = [
+                        "The commit modified:",
+                    ]
+                    for s in syms[:8]:
+                        lines.append(f"- {s.get('name')} ({s.get('file')})")
+                    for f in files[:8]:
+                        if not any(f in s.get('file', '') for s in syms):
+                            lines.append(f"- {f}")
+                    lines.extend([
+                        "",
+                        "Direct impact:",
+                    ])
+                    for direct in imp.get("direct", [])[:6]:
+                        lines.append(f"- {direct}")
+                    if not imp.get("direct"):
+                        lines.append("- None")
+                    lines.extend([
+                        "",
+                        "Indirect impact:",
+                    ])
+                    for ind in imp.get("indirect", [])[:6]:
+                        lines.append(f"- {ind}")
+                    if not imp.get("indirect"):
+                        lines.append("- None")
+                    lines.extend([
+                        "",
+                        f"Affected files: {len(imp.get('files', []))}",
+                        "",
+                        f"Risk: {risk.get('level', 'LOW')} ({risk.get('score', 0)}/100)",
+                        "",
+                        "Reason:",
+                    ])
+                    for r in risk.get("reasons", []):
+                        lines.append(f"- {r}")
+                    return "\n".join(lines)
+
+        # 0b. Check for semantic_code_search results (v1.8)
+        if current_intent == QuestionIntent.SEMANTIC_SEARCH:
+            for res in state.tool_results:
+                fmt = res.get("formatted_text")
+                if fmt:
+                    return fmt
+                d = res.get("data")
+                if isinstance(d, dict) and "results" in d:
+                    res_list = d.get("results", [])
+                    if not res_list:
+                        return f"No code found semantically matching query: '{state.user_question}'"
+                    first = res_list[0]
+                    sym = first.get("symbol", "symbol")
+                    f_path = first.get("file", "")
+                    s_line = first.get("start_line", 1)
+                    e_line = first.get("end_line", s_line)
+                    reason = first.get("reason", "")
+                    related = first.get("related_symbols", [])
+
+                    lines = [
+                        f"{classification.target_symbol or 'Requested functionality'} is primarily handled in:",
+                        "",
+                        f"{f_path}",
+                        f"  └── {sym}() (lines {s_line}-{e_line})",
+                        "",
+                        "Summary:",
+                        reason or f"Handles core logic for {sym}.",
+                    ]
+                    if related:
+                        lines.extend([
+                            "",
+                            "Related functionality:",
+                        ])
+                        for idx, rel in enumerate(related[:4]):
+                            prefix = "  └── " if idx == len(related[:4]) - 1 else "  ├── "
+                            lines.append(f"{prefix}{rel}()")
+                        lines.append("")
+                        lines.append("These functions/methods are connected through the codebase dependency flow.")
+                    return "\n".join(lines)
 
         # 1. Check for not found indicators first
         for res in state.tool_results:

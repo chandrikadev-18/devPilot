@@ -55,9 +55,12 @@ from app.git import (
     GitRepository,
     GitSecurityError,
     NotAGitRepositoryError,
+    get_blame_for_symbol,
     get_commit_detail,
     get_file_blame,
     get_file_history,
+    get_history_for_symbol,
+    get_last_change_for_symbol,
     get_last_commit_for_file,
     get_recent_commits,
     get_repository,
@@ -705,6 +708,47 @@ def run_search(
     print(f"  Total: {total_time:.2f}s")
 
 
+def run_semantic_search(
+    query: str,
+    top_k: int = 5,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """Executes DevPilot v1.8 Semantic Code Search."""
+    root_path = Path(project_dir).resolve()
+    try:
+        from app.search.hybrid_search import HybridCodeSearchEngine
+        engine = HybridCodeSearchEngine(project_root=root_path)
+        output = engine.search(query=query, top_k=top_k)
+
+        if as_json:
+            print(json.dumps(output.to_dict(), indent=2))
+            return
+
+        print("DevPilot v1.8 - Semantic Code Search")
+        print("─────────────────────────────────────\n")
+        print(f"Query:\n{query}\n")
+
+        if not output.results:
+            print("No code found matching query.")
+            return
+
+        print("Results:\n")
+        for idx, r in enumerate(output.results, 1):
+            sym_display = f"{r.symbol}()" if r.symbol_type in ("function", "method") and not r.symbol.endswith(")") else r.symbol
+            print(f"{idx}. {sym_display}")
+            print(f"   {r.file}:{r.start_line}-{r.end_line}")
+            print(f"   Score: {r.score:.2f}")
+            if r.reason:
+                print(f"   Reason: {r.reason}")
+            if r.related_symbols:
+                print(f"   Related: {', '.join(r.related_symbols[:4])}")
+            print()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def run_ask(
     question: str,
     top_k: int = 5,
@@ -986,25 +1030,25 @@ def run_git_log(limit: int = 10, project_dir: str = ".", as_json: bool = False):
 
 
 def run_git_history(file_path: str, limit: int = 10, project_dir: str = ".", as_json: bool = False):
-    """Executes git-history command showing commit history for a file."""
+    """Executes git-history command showing commit history for a symbol or file."""
     root_path = Path(project_dir).resolve()
     try:
         repo = get_repository(root_path)
-        history = get_file_history(repo=repo, file_path=file_path, limit=limit)
+        history = get_history_for_symbol(repo=repo, symbol=file_path, limit=limit, project_root=root_path)
         if as_json:
-            print(json.dumps(history.to_dict(), indent=2))
+            print(json.dumps(history, indent=2))
             return
 
-        print(f"Commit History: {history.file_path} ({len(history.commits)} commits)\n")
-        if not history.commits:
-            print("No commits found affecting this file.")
+        print(f"Commit History: {history['symbol']} ({history['file']}) — {history['total_commits']} commits\n")
+        if not history["commits"]:
+            print("No commits found affecting this symbol or file.")
             return
 
-        for c in history.commits:
-            print(f"Commit:  {c.short_hash}")
-            print(f"Author:  {c.author_name}")
-            print(f"Date:    {c.date}")
-            print(f"Message: {c.message}\n")
+        for c in history["commits"]:
+            print(f"Commit:  {c['short_hash']}")
+            print(f"Author:  {c['author_name']}")
+            print(f"Date:    {c['date']}")
+            print(f"Message: {c['message']}\n")
     except (NotAGitRepositoryError, GitSecurityError, GitFileNotFoundError, GitError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1014,28 +1058,21 @@ def run_git_history(file_path: str, limit: int = 10, project_dir: str = ".", as_
 
 
 def run_git_last_change(file_path: str, project_dir: str = ".", as_json: bool = False):
-    """Executes git-last-change command showing the most recent commit affecting a file."""
+    """Executes git-last-change command showing the most recent commit affecting a symbol or file."""
     root_path = Path(project_dir).resolve()
     try:
         repo = get_repository(root_path)
-        commit = get_last_commit_for_file(repo=repo, file_path=file_path)
+        last_change = get_last_change_for_symbol(repo=repo, symbol=file_path, project_root=root_path)
         if as_json:
-            print(json.dumps(commit.to_dict() if commit else None, indent=2))
+            print(json.dumps(last_change.to_dict(), indent=2))
             return
 
-        if not commit:
-            print(f"No commit history found for file: {file_path}")
-            return
-
-        print(f"Last Change: {file_path}\n")
-        print(f"Commit:  {commit.short_hash} ({commit.commit_hash})")
-        print(f"Author:  {commit.author_name} <{commit.author_email}>")
-        print(f"Date:    {commit.date}")
-        print(f"Message: {commit.message}")
-        if commit.files_changed:
-            print("Files Changed:")
-            for f in commit.files_changed:
-                print(f"  - {f}")
+        print(f"Last Change: {last_change.symbol}\n")
+        print(f"File:    {last_change.file}" + (f" (line {last_change.line})" if last_change.line else ""))
+        print(f"Commit:  {last_change.short_hash} ({last_change.commit})")
+        print(f"Author:  {last_change.author}")
+        print(f"Date:    {last_change.date}")
+        print(f"Message: {last_change.message}\n")
     except (NotAGitRepositoryError, GitSecurityError, GitFileNotFoundError, GitError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1081,21 +1118,75 @@ def run_git_blame(
     root_path = Path(project_dir).resolve()
     try:
         repo = get_repository(root_path)
-        blame_res = get_file_blame(
+        blame_res = get_blame_for_symbol(
             repo=repo,
-            file_path=file_path,
+            symbol=file_path,
             start_line=start_line,
             end_line=end_line,
+            project_root=root_path,
         )
         if as_json:
-            print(json.dumps(blame_res.to_dict(), indent=2))
+            print(json.dumps(blame_res, indent=2))
             return
 
-        range_str = f"Lines {blame_res.start_line or 1}-{blame_res.end_line or blame_res.lines[-1].line_number if blame_res.lines else 0}"
-        print(f"Blame: {blame_res.file_path} ({range_str})\n")
-        for line in blame_res.lines:
-            print(f"{line.line_number:<4} | {line.short_hash} | {line.author:<15} | {line.date[:10]} | {line.content}")
+        range_str = f"Lines {blame_res['start_line']}-{blame_res['end_line']}"
+        print(f"Blame: {blame_res['symbol']} ({blame_res['file']}, {range_str})\n")
+        print(f"Primary Contributor: {blame_res['primary_contributor']}\n")
+        for line in blame_res["lines"]:
+            print(f"{line['line_number']:<4} | {line['short_hash']} | {line['author']:<15} | {line['date'][:10]} | {line['content']}")
     except (NotAGitRepositoryError, GitSecurityError, GitFileNotFoundError, GitBlameError, GitError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_change_analyze(commit: str = "HEAD", project_dir: str = ".", as_json: bool = False):
+    """Executes change-analyze command showing changed symbols, impact, and risk score for a commit."""
+    root_path = Path(project_dir).resolve()
+    try:
+        from app.changes.analyzer import CodeChangeAnalyzer
+        analyzer = CodeChangeAnalyzer(project_root=root_path)
+        analysis = analyzer.analyze_commit(commit_hash=commit or "HEAD")
+        if as_json:
+            print(json.dumps(analysis.to_dict(), indent=2))
+            return
+
+        print("DevPilot v1.7 - Code Change Intelligence")
+        print("────────────────────────────────────────\n")
+        print(f"Commit:  {analysis.short_hash} ({analysis.commit})")
+        print(f"Author:  {analysis.author}")
+        print(f"Date:    {analysis.date}")
+        print(f"Message: {analysis.message}\n")
+
+        print("Changed Symbols:")
+        if not analysis.changed_symbols:
+            print("  • (No Python symbol definitions changed)")
+        else:
+            for s in analysis.changed_symbols:
+                loc = f" ({s.file}:{s.line_start})" if s.line_start else f" ({s.file})"
+                print(f"  • [{s.change_type.upper()}] {s.name}{loc}")
+
+        print("\nImpact:")
+        print(f"  Direct:   {len(analysis.impact.direct_dependents)}")
+        print(f"  Indirect: {len(analysis.impact.indirect_dependents)}")
+        print(f"  Files:    {len(analysis.impact.impacted_files)}")
+
+        if analysis.impact.direct_dependents:
+            print("\n  Direct Dependents:")
+            for d in analysis.impact.direct_dependents[:8]:
+                print(f"    - {d}")
+            if len(analysis.impact.direct_dependents) > 8:
+                print(f"    ... and {len(analysis.impact.direct_dependents) - 8} more")
+
+        print(f"\nRisk:")
+        print(f"  {analysis.risk.level} ({analysis.risk.score}/100)\n")
+        print("Reasons:")
+        for r in analysis.risk.reasons:
+            print(f"  • {r}")
+        print()
+    except (NotAGitRepositoryError, GitSecurityError, GitCommitNotFoundError, GitError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
@@ -1560,6 +1651,8 @@ def main():
         "graph-impact",
         "graph-file-dependencies",
         "demo",
+        "change-analyze",
+        "semantic-search",
         "-h",
         "--help",
     ]
@@ -1661,28 +1754,28 @@ def main():
     git_log_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     git_log_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
-    # git-history subcommand (v0.9)
-    git_history_parser = subparsers.add_parser("git-history", help="Display commit history affecting a specific file")
-    git_history_parser.add_argument("file_path", type=str, help="Path to the file")
+    # git-history subcommand (v0.9/v1.6)
+    git_history_parser = subparsers.add_parser("git-history", help="Display commit history affecting a symbol or file")
+    git_history_parser.add_argument("file_path", type=str, help="Symbol name (e.g. GraphBuilder.build) or path to the file")
     git_history_parser.add_argument("--limit", type=int, default=10, help="Maximum number of commits to show (default: 10)")
     git_history_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     git_history_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
-    # git-last-change subcommand (v0.9)
-    git_last_parser = subparsers.add_parser("git-last-change", help="Display the most recent commit affecting a file")
-    git_last_parser.add_argument("file_path", type=str, help="Path to the file")
+    # git-last-change subcommand (v0.9/v1.6)
+    git_last_parser = subparsers.add_parser("git-last-change", help="Display the most recent commit affecting a symbol or file")
+    git_last_parser.add_argument("file_path", type=str, help="Symbol name (e.g. GraphBuilder.build) or path to the file")
     git_last_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     git_last_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
-    # git-show subcommand (v0.9)
+    # git-show subcommand (v0.9/v1.6)
     git_show_parser = subparsers.add_parser("git-show", help="Display commit details, statistics, and diff summary")
     git_show_parser.add_argument("commit_hash", type=str, help="Commit hash or revision (e.g. HEAD, sha)")
     git_show_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     git_show_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
-    # git-blame subcommand (v0.9)
-    git_blame_parser = subparsers.add_parser("git-blame", help="Display line-by-line Git blame analysis")
-    git_blame_parser.add_argument("file_path", type=str, help="Path to the file")
+    # git-blame subcommand (v0.9/v1.6)
+    git_blame_parser = subparsers.add_parser("git-blame", help="Display line-by-line Git blame analysis for a symbol or file")
+    git_blame_parser.add_argument("file_path", type=str, help="Symbol name (e.g. GraphBuilder.build) or path to the file")
     git_blame_parser.add_argument("--start-line", type=int, default=None, help="Starting line number (1-indexed)")
     git_blame_parser.add_argument("--end-line", type=int, default=None, help="Ending line number (1-indexed)")
     git_blame_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
@@ -1747,6 +1840,19 @@ def main():
     # demo subcommand (v1.3)
     demo_parser = subparsers.add_parser("demo", help="Run presentation-ready demo of DevPilot capabilities")
     demo_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory (default: .)")
+
+    # change-analyze subcommand (v1.7)
+    change_analyze_parser = subparsers.add_parser("change-analyze", help="Analyze code changes, symbol modifications, impact, and risk for a commit")
+    change_analyze_parser.add_argument("commit", type=str, nargs="?", default="HEAD", help="Git commit hash, short SHA, or revision (default: HEAD)")
+    change_analyze_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    change_analyze_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # semantic-search subcommand (v1.8)
+    semantic_search_parser = subparsers.add_parser("semantic-search", help="Perform natural language semantic code search across symbols and relationships")
+    semantic_search_parser.add_argument("query", type=str, help="Natural language query or concept description")
+    semantic_search_parser.add_argument("--top-k", type=int, default=5, help="Maximum number of results to return (default: 5)")
+    semantic_search_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    semantic_search_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
     args = parser.parse_args()
     
@@ -1899,6 +2005,19 @@ def main():
     elif args.command == "demo":
         run_demo(
             project_dir=args.project_dir,
+        )
+    elif args.command == "change-analyze":
+        run_change_analyze(
+            commit=args.commit,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "semantic-search":
+        run_semantic_search(
+            query=args.query,
+            top_k=args.top_k,
+            project_dir=args.project_dir,
+            as_json=args.json,
         )
 
 

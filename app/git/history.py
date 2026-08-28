@@ -7,7 +7,7 @@ commit detail retrieval, and diff formatting with bounded limits.
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import git
 
@@ -17,6 +17,7 @@ from app.git.models import (
     CommitDetail,
     CommitInfo,
     FileHistoryResult,
+    SymbolLastChangeResult,
 )
 from app.git.repository import (
     GitBlameError,
@@ -156,10 +157,16 @@ def get_commit_detail(
 
     try:
         commit = repo.raw_repo.commit(target_hash)
-    except (git.BadName, ValueError) as e:
+        # Force evaluation of lazy GitPython commit object
+        _ = commit.committed_date
+    except (git.BadName, git.BadObject, ValueError, KeyError, IndexError) as e:
         raise GitCommitNotFoundError(f"Commit not found: '{commit_hash}'") from e
-    except Exception as e:
+    except git.GitCommandError as e:
+        if "bad revision" in str(e).lower() or "unknown revision" in str(e).lower() or "bad object" in str(e).lower() or "not found" in str(e).lower():
+            raise GitCommitNotFoundError(f"Commit not found: '{commit_hash}'") from e
         raise GitError(f"Error accessing commit '{commit_hash}': {e}") from e
+    except Exception as e:
+        raise GitCommitNotFoundError(f"Commit not found: '{commit_hash}'") from e
 
     # Extract stats
     additions = 0
@@ -295,3 +302,223 @@ def get_file_blame(
         start_line=start_line,
         end_line=end_line,
     )
+
+
+def resolve_symbol_location(
+    symbol: str,
+    project_root: Optional[Path] = None,
+    graph: Optional[Any] = None,
+) -> Optional[Tuple[str, int, int]]:
+    """
+    Resolves a symbol name or file path to its relative file path, start line, and end line.
+    Returns (file_path, start_line, end_line) or None if unresolvable.
+    """
+    if not symbol or not symbol.strip():
+        return None
+
+    root = (project_root or Path.cwd()).resolve()
+    cleaned = symbol.strip().replace("\\", "/")
+
+    # 1. Direct file path check
+    direct_path = (root / cleaned).resolve()
+    if direct_path.is_file():
+        try:
+            rel = direct_path.relative_to(root).as_posix()
+            lines = direct_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            return (rel, 1, max(1, len(lines)))
+        except Exception:
+            pass
+
+    # 2. Check Dependency Graph
+    try:
+        from app.graph.models import NodeType
+        active_graph = graph
+        if active_graph is None:
+            from app.agent.tools import _resolve_graph
+            active_graph = _resolve_graph(None, root)
+
+        if active_graph:
+            leaf = cleaned.split(".")[-1].lower()
+            nodes = active_graph.find_nodes_by_name(leaf)
+            if not nodes and "." in cleaned:
+                nodes = active_graph.find_nodes_by_name(cleaned.lower())
+
+            for n in nodes:
+                if n.node_type in (NodeType.FUNCTION, NodeType.METHOD, NodeType.CLASS):
+                    s_line = n.start_line or 1
+                    e_line = n.end_line or (s_line + 30)
+                    return (n.file_path, s_line, e_line)
+    except Exception:
+        pass
+
+    # 3. Search AST across Python files in project_root
+    try:
+        from app.parser.python_parser import PythonParser
+        parser = PythonParser()
+        leaf = cleaned.split(".")[-1].lower()
+        for pf in root.rglob("*.py"):
+            rel_p = pf.relative_to(root).as_posix()
+            if rel_p.startswith((".venv", "venv", ".git", "build", "dist")):
+                continue
+            parsed = parser.parse_file(str(pf))
+            # Classes
+            for cls in parsed.get("classes", []):
+                if cls["name"].lower() == leaf or (cleaned.lower() in cls["name"].lower()):
+                    s_line = cls.get("line_number", 1)
+                    return (rel_p, s_line, s_line + 30)
+            # Functions / Methods
+            for fn in parsed.get("functions", []) + parsed.get("methods", []):
+                if fn["name"].lower() == leaf:
+                    s_line = fn.get("line_number", 1)
+                    return (rel_p, s_line, s_line + 30)
+    except Exception:
+        pass
+
+    return None
+
+
+def get_last_change_for_symbol(
+    repo: GitRepository,
+    symbol: str,
+    project_root: Optional[Path] = None,
+    graph: Optional[Any] = None,
+) -> SymbolLastChangeResult:
+    """
+    Finds the most recent Git commit, author, date, and commit message affecting a symbol or file.
+    """
+    if not symbol or not symbol.strip():
+        raise GitError("Symbol or file path cannot be empty.")
+
+    root = project_root or repo.root
+    location = resolve_symbol_location(symbol, project_root=root, graph=graph)
+
+    if location is None:
+        rel_path = repo.resolve_safe_relpath(symbol)
+        full_path = repo.root / rel_path
+        if not full_path.exists():
+            raise GitFileNotFoundError(f"Symbol or file not found in codebase: '{symbol}'")
+        location = (rel_path, 1, 1)
+
+    file_path, start_line, end_line = location
+
+    # Try Git blame on the exact definition line
+    try:
+        blame_res = get_file_blame(repo, file_path=file_path, start_line=start_line, end_line=start_line)
+        if blame_res.lines:
+            target_line = blame_res.lines[0]
+            commit_hash = target_line.commit_hash
+            short_hash = target_line.short_hash
+            author = target_line.author
+            date = target_line.date
+            message = ""
+            try:
+                c_obj = repo.raw_repo.commit(commit_hash)
+                message = c_obj.message.strip() if c_obj.message else ""
+            except Exception:
+                pass
+
+            return SymbolLastChangeResult(
+                symbol=symbol,
+                commit=commit_hash,
+                short_hash=short_hash,
+                author=author,
+                date=date,
+                message=message,
+                file=file_path,
+                line=start_line,
+                end_line=end_line,
+            )
+    except Exception:
+        pass
+
+    # Fallback to last commit for file
+    last_commit = get_last_commit_for_file(repo, file_path=file_path)
+    if last_commit:
+        return SymbolLastChangeResult(
+            symbol=symbol,
+            commit=last_commit.commit_hash,
+            short_hash=last_commit.short_hash,
+            author=last_commit.author_name,
+            date=last_commit.date,
+            message=last_commit.message,
+            file=file_path,
+            line=start_line,
+            end_line=end_line,
+        )
+
+    raise GitError(f"No Git history found for '{symbol}' in '{file_path}'.")
+
+
+def get_history_for_symbol(
+    repo: GitRepository,
+    symbol: str,
+    limit: int = 10,
+    project_root: Optional[Path] = None,
+    graph: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Retrieves commit history for a symbol or file.
+    """
+    root = project_root or repo.root
+    location = resolve_symbol_location(symbol, project_root=root, graph=graph)
+    if location is None:
+        rel_path = repo.resolve_safe_relpath(symbol)
+        full_path = repo.root / rel_path
+        if not full_path.exists():
+            raise GitFileNotFoundError(f"Symbol or file not found in codebase: '{symbol}'")
+        location = (rel_path, 1, 1)
+
+    file_path, start_line, end_line = location
+    history_res = get_file_history(repo, file_path=file_path, limit=limit)
+    return {
+        "symbol": symbol,
+        "file": file_path,
+        "line": start_line,
+        "total_commits": history_res.total_commits,
+        "commits": [c.to_dict() for c in history_res.commits],
+    }
+
+
+def get_blame_for_symbol(
+    repo: GitRepository,
+    symbol: str,
+    start_line: Optional[int] = None,
+    end_line: Optional[int] = None,
+    project_root: Optional[Path] = None,
+    graph: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Performs Git blame analysis specifically targeted at a symbol or file.
+    """
+    root = project_root or repo.root
+    location = resolve_symbol_location(symbol, project_root=root, graph=graph)
+    if location is None:
+        rel_path = repo.resolve_safe_relpath(symbol)
+        full_path = repo.root / rel_path
+        if not full_path.exists():
+            raise GitFileNotFoundError(f"Symbol or file not found in codebase: '{symbol}'")
+        location = (rel_path, start_line or 1, end_line or 1)
+
+    file_path, sym_start, sym_end = location
+    s_line = start_line if start_line is not None else sym_start
+    e_line = end_line if end_line is not None else sym_end
+
+    blame_res = get_file_blame(repo, file_path=file_path, start_line=s_line, end_line=e_line)
+
+    author_counts: Dict[str, int] = {}
+    for line in blame_res.lines:
+        author_counts[line.author] = author_counts.get(line.author, 0) + 1
+
+    top_author = max(author_counts.items(), key=lambda item: item[1])[0] if author_counts else "Unknown"
+
+    return {
+        "symbol": symbol,
+        "file": file_path,
+        "start_line": s_line,
+        "end_line": e_line,
+        "total_lines": blame_res.to_dict()["total_lines"],
+        "primary_contributor": top_author,
+        "contributors": list(author_counts.keys()),
+        "lines": blame_res.to_dict()["lines"],
+    }
+
