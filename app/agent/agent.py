@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from app.agent.intent import QuestionIntent, classify_question_intent
 from app.agent.state import AgentResult, AgentState
 from app.agent.tool_registry import ToolRegistry
+from app.agent.verifier import AgentAnswerVerifier, verify_agent_answer
 from app.config import (
     get_max_agent_iterations,
     get_max_tool_calls,
@@ -680,9 +681,17 @@ class CodebaseAgent:
 
         total_time = time.time() - t_start
 
+        # Evidence Grounding & Verification Layer (v1.6)
+        verifier = AgentAnswerVerifier()
+        verification_result = verifier.verify(answer=state.final_answer or "", state=state)
+
+        final_answer_text = state.final_answer.strip() if state.final_answer else ""
+        if not final_answer_text.startswith("Symbol not found:") and verification_result.evidence:
+            final_answer_text = verification_result.to_formatted_string()
+
         return AgentResult(
             question=state.user_question,
-            answer=state.final_answer.strip(),
+            answer=final_answer_text,
             sources=state.sources,
             tool_calls=state.tool_calls,
             iterations=state.iteration_count,
@@ -690,6 +699,7 @@ class CodebaseAgent:
             model=self.llm.model_name,
             timing={"total": total_time},
             stopped_reason=state.stopped_reason,
+            verification=verification_result.to_dict(),
         )
 
     def _generate_fallback_explanation(
@@ -706,7 +716,14 @@ class CodebaseAgent:
 
         current_intent = getattr(classification, "intent", None)
 
-        # 0. Check for analyze_code_change results (v1.7)
+        # 0. Check for plan_code_change results (v1.7)
+        if current_intent == QuestionIntent.CHANGE_PLAN:
+            for res in state.tool_results:
+                fmt = res.get("formatted_text")
+                if fmt:
+                    return fmt
+
+        # 0a. Check for analyze_code_change results (v1.7)
         if current_intent == QuestionIntent.CODE_CHANGE_ANALYSIS:
             for res in state.tool_results:
                 fmt = res.get("formatted_text")

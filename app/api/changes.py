@@ -13,7 +13,10 @@ from app.schemas.changes import (
     AnalyzeChangeResponse,
     ChangedSymbolItem,
     ChangeImpactItem,
+    ChangePlanEvidenceItem,
     ChangeRiskItem,
+    PlanChangeRequest,
+    PlanChangeResponse,
 )
 
 router = APIRouter(prefix="/changes", tags=["Code Change Intelligence"])
@@ -93,3 +96,72 @@ def analyze_code_change_get(
     project_dir: str = Query(".", description="Target project directory"),
 ) -> AnalyzeChangeResponse:
     return _run_change_analysis(commit=commit, project_dir=project_dir)
+
+
+def _run_change_plan(change_request: str, project_dir: str) -> PlanChangeResponse:
+    if not change_request or not change_request.strip():
+        raise HTTPException(status_code=400, detail="Change request cannot be empty.")
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        raise HTTPException(status_code=400, detail=f"Project directory does not exist: '{project_dir}'")
+
+    try:
+        from app.changes.planner import ChangeImpactPlanner
+        from app.schemas.changes import ChangePlanEvidenceItem, PlanChangeResponse
+        planner = ChangeImpactPlanner(project_root=root)
+        plan = planner.plan_change(change_request=change_request)
+
+        return PlanChangeResponse(
+            change_request=plan.change_request,
+            target=plan.target_symbol or plan.target_file or "Unknown",
+            target_symbol=plan.target_symbol,
+            target_file=plan.target_file,
+            target_lines=plan.target_lines,
+            affected_files=plan.affected_files,
+            affected_symbols=plan.affected_symbols,
+            relevant_tests=plan.relevant_tests,
+            recommended_order=plan.recommended_order,
+            risk=plan.risk,
+            reason=plan.reason,
+            evidence=[
+                ChangePlanEvidenceItem(
+                    file=e.file,
+                    symbol=e.symbol,
+                    lines=e.lines,
+                    relationship=e.relationship,
+                )
+                for e in plan.evidence
+            ],
+            unverified=plan.unverified,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error planning code change: {str(e)}")
+
+
+@router.post(
+    "/plan",
+    response_model=PlanChangeResponse,
+    summary="Plan Code Change Implementation (POST)",
+    description="Constructs a grounded implementation plan with affected files, dependent symbols, tests, implementation order, and risk.",
+)
+def plan_code_change_post(
+    request: PlanChangeRequest,
+) -> PlanChangeResponse:
+    return _run_change_plan(change_request=request.change_request, project_dir=request.project_dir)
+
+
+@router.get(
+    "/plan",
+    response_model=PlanChangeResponse,
+    summary="Plan Code Change Implementation (GET)",
+    description="Constructs a grounded implementation plan with affected files, dependent symbols, tests, implementation order, and risk.",
+)
+def plan_code_change_get(
+    change_request: str = Query(..., min_length=1, description="Developer change request or refactoring goal"),
+    project_dir: str = Query(".", description="Target project directory"),
+) -> PlanChangeResponse:
+    return _run_change_plan(change_request=change_request, project_dir=project_dir)
+

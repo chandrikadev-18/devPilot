@@ -1666,4 +1666,72 @@ def create_semantic_code_search_tool(
     }
 
 
+def create_plan_code_change_tool(
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for plan_code_change tool (v1.7)."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def plan_code_change_tool(change_request: str) -> Dict[str, Any]:
+        """Creates a grounded code change implementation plan detailing affected symbols, tests, order, and risk."""
+        from app.changes.planner import ChangeImpactPlanner
+        from app.vector_store.qdrant_store import ValidationError
+
+        if not change_request or not change_request.strip():
+            return {
+                "data": "Change request cannot be empty.",
+                "sources": [],
+            }
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            planner = ChangeImpactPlanner(project_root=root)
+            plan = planner.plan_change(change_request=change_request, graph=active_graph)
+        except ValidationError as e:
+            return {
+                "data": str(e),
+                "sources": [],
+            }
+        except Exception as e:
+            return {
+                "data": f"Error planning code change: {str(e)}",
+                "sources": [],
+            }
+
+        sources = []
+        for ev in plan.evidence:
+            sources.append({
+                "source_type": "graph" if "caller" in ev.relationship.lower() or "test" in ev.relationship.lower() else "code",
+                "symbol_name": ev.symbol,
+                "file_path": ev.file,
+                "lines": ev.lines,
+                "relationship": ev.relationship,
+            })
+
+        return {
+            "data": plan.to_dict(),
+            "formatted_text": plan.to_formatted_string(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "plan_code_change",
+        "description": "Analyzes a proposed code change or refactoring request and constructs a grounded change plan with affected files, dependent symbols, relevant tests, implementation order, and risk score.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "change_request": {
+                    "type": "string",
+                    "description": "Developer change request or refactoring goal (e.g. 'Improve GraphBuilder.build performance', 'Refactor auth.py')",
+                },
+            },
+            "required": ["change_request"],
+        },
+        "func": plan_code_change_tool,
+        "safety_level": "read_only",
+    }
+
+
+
 

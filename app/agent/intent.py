@@ -28,6 +28,7 @@ class QuestionIntent(str, Enum):
     DEFINITION = "DEFINITION"
     EXPLANATION = "EXPLANATION"
     REPOSITORY_CONTEXT = "REPOSITORY_CONTEXT"
+    CHANGE_PLAN = "CHANGE_PLAN"
     SEMANTIC_SEARCH = "SEMANTIC_SEARCH"
     SEARCH = "SEARCH"
 
@@ -85,6 +86,25 @@ def classify_question_intent(question: str) -> IntentClassification:
                 intent=QuestionIntent.CODE_CHANGE_ANALYSIS,
                 target_symbol=c_val,
                 preferred_tools=["analyze_code_change"],
+            )
+
+    # 0b. CHANGE_PLAN Intent (v1.7)
+    # "Plan changes for X", "How should I refactor X?", "Improve GraphBuilder.build performance", "What is the plan to change X?"
+    plan_patterns = [
+        r"^(?:plan|how\s+to\s+plan)\s+(?:changes?\s+(?:for|to|in)|refactoring\s+(?:of|for)|modification\s+(?:of|for))\s+(.+)",
+        r"^how\s+(?:should|can|do)\s+(?:i|we)\s+(?:refactor|change|modify|improve|update)\s+(.+)",
+        r"^plan\s+(?:to\s+)?(?:improve|refactor|change|modify|update|optimize)\s+(.+)",
+        r"^(?:improve|optimize|refactor)\s+([a-zA-Z0-9_.]+(?:\.[a-zA-Z0-9_]+)?)\s+(?:performance|speed|implementation|logic)",
+        r"^what\s+(?:is|would\s+be)\s+the\s+(?:implementation\s+)?plan\s+(?:to|for)\s+(?:change|refactor|improve|modify)\s+(.+)",
+    ]
+    for pat in plan_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym = _clean_symbol_candidate(m.group(1))
+            return IntentClassification(
+                intent=QuestionIntent.CHANGE_PLAN,
+                target_symbol=sym,
+                preferred_tools=["plan_code_change"],
             )
 
     # 1. GIT_CHANGE_AND_IMPACT Intent

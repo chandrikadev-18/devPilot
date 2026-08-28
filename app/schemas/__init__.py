@@ -30,9 +30,12 @@ from app.schemas.agent import (
 from app.schemas.changes import (
     AnalyzeChangeRequest,
     AnalyzeChangeResponse,
-    ChangedSymbolItem,
     ChangeImpactItem,
+    ChangePlanEvidenceItem,
     ChangeRiskItem,
+    ChangedSymbolItem,
+    PlanChangeRequest,
+    PlanChangeResponse,
 )
 from app.schemas.git import (
     GitBlameLineSchema,
@@ -74,4 +77,7 @@ __all__ = [
     "ChangedSymbolItem",
     "ChangeImpactItem",
     "ChangeRiskItem",
+    "PlanChangeRequest",
+    "ChangePlanEvidenceItem",
+    "PlanChangeResponse",
 ]

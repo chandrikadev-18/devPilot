@@ -43,3 +43,32 @@ class AnalyzeChangeResponse(BaseModel):
     changed_symbols: List[ChangedSymbolItem] = Field(default_factory=list, description="List of changed AST symbols")
     impact: ChangeImpactItem = Field(..., description="Static dependency impact analysis")
     risk: ChangeRiskItem = Field(..., description="Calculated change risk evaluation")
+
+
+class PlanChangeRequest(BaseModel):
+    change_request: str = Field(..., min_length=1, description="Developer change request or refactoring goal")
+    project_dir: str = Field(default=".", description="Target project directory")
+
+
+class ChangePlanEvidenceItem(BaseModel):
+    file: str = Field(..., description="File path")
+    symbol: str = Field(..., description="Symbol name")
+    lines: str = Field(..., description="Line span")
+    relationship: str = Field(..., description="Relationship description")
+
+
+class PlanChangeResponse(BaseModel):
+    change_request: str = Field(..., description="Original change request")
+    target: str = Field(..., description="Resolved target symbol or file")
+    target_symbol: Optional[str] = Field(None, description="Resolved target symbol name")
+    target_file: Optional[str] = Field(None, description="Resolved target file path")
+    target_lines: Optional[str] = Field(None, description="Target line span")
+    affected_files: List[str] = Field(default_factory=list, description="All impacted file paths")
+    affected_symbols: List[str] = Field(default_factory=list, description="All impacted symbol names")
+    relevant_tests: List[str] = Field(default_factory=list, description="Relevant test suites")
+    recommended_order: List[str] = Field(default_factory=list, description="Recommended implementation steps")
+    risk: str = Field(..., description="Risk level (LOW, MEDIUM, HIGH)")
+    reason: str = Field(..., description="Grounded explanation of change risk")
+    evidence: List[ChangePlanEvidenceItem] = Field(default_factory=list, description="Supporting evidence items")
+    unverified: List[str] = Field(default_factory=list, description="Unverified claims if any")
+

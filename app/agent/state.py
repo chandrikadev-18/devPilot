@@ -84,10 +84,11 @@ class AgentResult:
     model: str = ""
     timing: Dict[str, float] = field(default_factory=dict)
     stopped_reason: str = "completed"
+    verification: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts AgentResult to a clean JSON-serializable dictionary."""
-        return {
+        d = {
             "question": self.question,
             "answer": self.answer,
             "sources": self.sources,
@@ -98,3 +99,6 @@ class AgentResult:
             "timing": {k: round(v, 4) for k, v in self.timing.items()},
             "stopped_reason": self.stopped_reason,
         }
+        if self.verification is not None:
+            d["verification"] = self.verification
+        return d

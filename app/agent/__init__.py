@@ -31,10 +31,18 @@ from app.agent.tools import (
     create_git_history_tool,
     create_git_last_change_tool,
     create_git_show_commit_tool,
+    create_plan_code_change_tool,
     create_read_file_tool,
     create_search_code_tool,
     create_semantic_code_search_tool,
     resolve_safe_path,
+)
+from app.agent.verifier import (
+    AgentAnswerVerifier,
+    EvidenceItem,
+    VerificationConfidence,
+    VerificationResult,
+    verify_agent_answer,
 )
 from app.llm.base import LLMProvider
 from app.search.semantic_search import SemanticSearcher
@@ -145,6 +153,10 @@ def create_default_tool_registry(
     semantic_search_spec = create_semantic_code_search_tool(searcher=searcher, project_root=root)
     registry.register(Tool(**semantic_search_spec))
 
+    # 23. plan_code_change (v1.7)
+    plan_change_spec = create_plan_code_change_tool(project_root=root)
+    registry.register(Tool(**plan_change_spec))
+
     return registry
 
 
@@ -206,4 +218,10 @@ __all__ = [
     "create_git_show_commit_tool",
     "create_analyze_code_change_tool",
     "create_semantic_code_search_tool",
+    "create_plan_code_change_tool",
+    "AgentAnswerVerifier",
+    "EvidenceItem",
+    "VerificationConfidence",
+    "VerificationResult",
+    "verify_agent_answer",
 ]

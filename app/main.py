@@ -749,6 +749,28 @@ def run_semantic_search(
         sys.exit(1)
 
 
+def run_plan_change(
+    change_request: str,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """Executes DevPilot v1.7 Change Impact Planner."""
+    root_path = Path(project_dir).resolve()
+    try:
+        from app.changes.planner import ChangeImpactPlanner
+        planner = ChangeImpactPlanner(project_root=root_path)
+        plan = planner.plan_change(change_request=change_request)
+
+        if as_json:
+            print(json.dumps(plan.to_dict(), indent=2))
+            return
+
+        print(plan.to_formatted_string())
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def run_ask(
     question: str,
     top_k: int = 5,
@@ -1620,6 +1642,101 @@ def run_demo(project_dir: str = "."):
     print("Demo completed successfully.")
 
 
+def run_change_analyze(commit: str = "HEAD", project_dir: str = ".", as_json: bool = False):
+    """Analyzes a Git commit for changed symbols, dependency graph impact, and deterministic risk score."""
+    from app.changes.analyzer import CodeChangeAnalyzer
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        analyzer = CodeChangeAnalyzer(project_root=root)
+        analysis = analyzer.analyze_commit(commit_hash=commit or "HEAD")
+
+        if as_json:
+            print(json.dumps(analysis.to_dict(), indent=2))
+            return
+
+        print("DevPilot v1.7 - Code Change Intelligence\n────────────────────────────────────────\n")
+        print(analysis.to_formatted_text())
+    except Exception as e:
+        print(f"Error analyzing code changes: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_semantic_search(query: str, top_k: int = 5, project_dir: str = ".", as_json: bool = False):
+    """Performs natural language semantic search across symbols and relationships."""
+    from app.search.hybrid_search import HybridCodeSearchEngine
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        engine = HybridCodeSearchEngine(project_root=root)
+        output = engine.search(query=query, top_k=top_k)
+
+        if as_json:
+            print(json.dumps(output.to_dict(), indent=2))
+            return
+
+        print("DevPilot v1.8 - Semantic Code Search\n────────────────────────────────────────\n")
+        print(output.to_formatted_text())
+    except Exception as e:
+        print(f"Error performing semantic code search: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_plan_change(change_request: str, project_dir: str = ".", as_json: bool = False):
+    """
+    Plans code changes, impacted symbols, affected files, relevant tests,
+    recommended implementation order, and risk level.
+    """
+    from app.changes.planner import ChangeImpactPlanner
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        planner = ChangeImpactPlanner(project_root=root)
+        plan = planner.plan_change(change_request=change_request)
+
+        if as_json:
+            print(json.dumps(plan.to_dict(), indent=2))
+            return
+
+        print(plan.to_formatted_string())
+    except Exception as e:
+        print(f"Error planning code change: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_change(change_request: str, project_dir: str = ".", as_json: bool = False):
+    """
+    Plans change impact and generates a reviewable unified diff patch WITHOUT modifying files.
+    """
+    from app.changes.patch import CodeChangePatchGenerator
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        generator = CodeChangePatchGenerator(project_root=root)
+        proposal = generator.generate_patch(change_request=change_request)
+
+        if as_json:
+            print(json.dumps(proposal.to_dict(), indent=2))
+            return
+
+        print(proposal.to_formatted_text())
+    except Exception as e:
+        print(f"Error generating change patch: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     
@@ -1653,6 +1770,8 @@ def main():
         "demo",
         "change-analyze",
         "semantic-search",
+        "plan-change",
+        "change",
         "-h",
         "--help",
     ]
@@ -1854,6 +1973,18 @@ def main():
     semantic_search_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     semantic_search_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # plan-change subcommand (v1.7)
+    plan_change_parser = subparsers.add_parser("plan-change", help="Plan code changes, impact, affected files, tests, and implementation order")
+    plan_change_parser.add_argument("request", type=str, help="Developer change request (e.g. 'Improve GraphBuilder.build performance')")
+    plan_change_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    plan_change_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # change subcommand (v1.6 Patch Generator)
+    change_parser = subparsers.add_parser("change", help="Plan code changes and generate a reviewable unified diff patch")
+    change_parser.add_argument("request", type=str, help="Natural language change request (e.g. 'Improve GraphBuilder.build performance')")
+    change_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    change_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -2016,6 +2147,18 @@ def main():
         run_semantic_search(
             query=args.query,
             top_k=args.top_k,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "plan-change":
+        run_plan_change(
+            change_request=args.request,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "change":
+        run_change(
+            change_request=args.request,
             project_dir=args.project_dir,
             as_json=args.json,
         )

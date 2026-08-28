@@ -118,3 +118,23 @@ def calculate_change_risk(
         level=level,
         reasons=reasons,
     )
+
+
+def calculate_plan_risk(
+    total_affected_symbols: int,
+    low_threshold: int = 5,
+    medium_threshold: int = 15,
+) -> str:
+    """
+    Calculates change plan risk deterministically based on total impacted symbols count:
+    - LOW: <= low_threshold (default 5)
+    - MEDIUM: low_threshold + 1 .. medium_threshold (default 6-15)
+    - HIGH: > medium_threshold (default > 15)
+    """
+    if total_affected_symbols <= low_threshold:
+        return "LOW"
+    elif total_affected_symbols <= medium_threshold:
+        return "MEDIUM"
+    else:
+        return "HIGH"
+
