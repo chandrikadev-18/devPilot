@@ -327,9 +327,12 @@ class CodebaseAgent:
                             is_file_cache_hit = True
 
                     total_tool_calls_count += 1
+                    t_tool_start = time.perf_counter()
                     call_record = {
                         "tool": tc.name,
                         "arguments": tc.arguments,
+                        "status": "pending",
+                        "duration_ms": 0.0,
                     }
                     state.tool_calls.append(call_record)
 
@@ -375,6 +378,8 @@ class CodebaseAgent:
                             }],
                         }
                         executed_tool_calls_cache[call_sig] = exec_result
+                        call_record["status"] = "success"
+                        call_record["duration_ms"] = round((time.perf_counter() - t_tool_start) * 1000, 2)
 
                         if on_tool_call:
                             on_tool_call(tc.name, display_args)
@@ -389,6 +394,8 @@ class CodebaseAgent:
                             "data": "Duplicate tool call detected. This exact tool call was already executed. Use the previous result instead.",
                             "sources": prev_res.get("sources", []),
                         }
+                        call_record["status"] = "success"
+                        call_record["duration_ms"] = round((time.perf_counter() - t_tool_start) * 1000, 2)
                         state.stopped_reason = "repeated_tool_call"
                         has_new_call = False
                         break
@@ -400,6 +407,8 @@ class CodebaseAgent:
 
                         exec_result = self.tool_registry.execute(tc.name, tc.arguments)
                         executed_tool_calls_cache[call_sig] = exec_result
+                        call_record["status"] = "success" if exec_result.get("success") else "failed"
+                        call_record["duration_ms"] = round((time.perf_counter() - t_tool_start) * 1000, 2)
 
                         # Track resolved symbol from find_symbol
                         if tc.name == "find_symbol" and exec_result.get("success"):

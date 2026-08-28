@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 
 from app.agent import create_codebase_agent
@@ -21,16 +21,29 @@ from app.vector_store.qdrant_store import (
     QdrantVectorStore,
 )
 
-router = APIRouter(prefix="/agent", tags=["AI Agent"])
+router = APIRouter(tags=["AI Agent"])
 
 
-@router.post(
-    "/ask",
-    response_model=AgentAskResponse,
-    summary="Ask AI Agent a Codebase Question",
-    description="Executes DevPilot multi-step reasoning AI Agent with codebase tools to answer questions.",
-)
-def ask_agent(req: AgentAskRequest) -> AgentAskResponse:
+_VECTOR_STORE_CACHE: Dict[str, QdrantVectorStore] = {}
+_EMBEDDER_CACHE: Optional[CodeEmbedder] = None
+
+
+def _get_embedder() -> CodeEmbedder:
+    global _EMBEDDER_CACHE
+    if _EMBEDDER_CACHE is None:
+        _EMBEDDER_CACHE = CodeEmbedder()
+    return _EMBEDDER_CACHE
+
+
+def _get_vector_store(storage_path: str = DEFAULT_STORAGE_PATH) -> QdrantVectorStore:
+    resolved = str(Path(storage_path).resolve())
+    if resolved not in _VECTOR_STORE_CACHE:
+        _VECTOR_STORE_CACHE[resolved] = QdrantVectorStore(storage_path=storage_path)
+    return _VECTOR_STORE_CACHE[resolved]
+
+
+def process_agent_question(req: AgentAskRequest) -> AgentAskResponse:
+    """Core logic to process an agent question and build a structured response."""
     question = req.question.strip() if req.question else ""
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
@@ -40,8 +53,8 @@ def ask_agent(req: AgentAskRequest) -> AgentAskResponse:
         raise HTTPException(status_code=400, detail=f"Project directory does not exist: '{req.project_dir}'")
 
     try:
-        embedder = CodeEmbedder()
-        store = QdrantVectorStore(storage_path=DEFAULT_STORAGE_PATH)
+        embedder = _get_embedder()
+        store = _get_vector_store(DEFAULT_STORAGE_PATH)
         searcher = SemanticSearcher(
             embedder=embedder,
             vector_store=store,
@@ -64,24 +77,46 @@ def ask_agent(req: AgentAskRequest) -> AgentAskResponse:
         result = agent.run(question=question)
         answer = strip_thinking_and_tool_tags(result.answer)
 
-        # Extract tools used in order
-        tools_used = [
-            tc.get("tool") or tc.get("name") or str(tc)
-            if isinstance(tc, dict)
-            else getattr(tc, "name", str(tc))
-            for tc in result.tool_calls
-        ]
+        # Extract tools used and tool execution metadata
+        tools_used: List[str] = []
+        tool_executions: List[Dict[str, Any]] = []
+
+        for tc in result.tool_calls:
+            if isinstance(tc, dict):
+                t_name = tc.get("tool") or tc.get("name") or str(tc)
+                tools_used.append(t_name)
+                tool_executions.append({
+                    "tool": t_name,
+                    "status": tc.get("status", "success"),
+                    "duration_ms": tc.get("duration_ms", 0.0),
+                })
+            else:
+                t_name = getattr(tc, "name", str(tc))
+                tools_used.append(t_name)
+                tool_executions.append({
+                    "tool": t_name,
+                    "status": "success",
+                    "duration_ms": 0.0,
+                })
+
+        metadata = {
+            "iterations": result.iterations,
+            "stopped_reason": result.stopped_reason,
+            "timing": result.timing,
+            "tool_executions": tool_executions,
+        }
 
         return AgentAskResponse(
             question=question,
             answer=answer,
             tools_used=tools_used,
-            iterations=result.iterations,
             sources=result.sources,
+            metadata=metadata,
+            iterations=result.iterations,
             timing=result.timing,
         )
 
-    except LLMAuthenticationError as e:
+    except LLMAuthenticationError:
         raise HTTPException(
             status_code=401,
             detail="LLM API key is not configured. Please configure the required environment variable.",
@@ -101,3 +136,33 @@ def ask_agent(req: AgentAskRequest) -> AgentAskResponse:
             status_code=500,
             detail=f"Error executing agent reasoning: {str(e)}",
         )
+
+
+@router.post(
+    "/agent/ask",
+    response_model=AgentAskResponse,
+    summary="Ask AI Agent a Codebase Question (Agent Namespace)",
+    description="Executes DevPilot multi-step reasoning AI Agent with codebase tools to answer questions.",
+)
+def ask_agent_namespaced(req: AgentAskRequest) -> AgentAskResponse:
+    return process_agent_question(req)
+
+
+@router.post(
+    "/ask",
+    response_model=AgentAskResponse,
+    summary="Ask AI Agent a Codebase Question",
+    description="Executes DevPilot multi-step reasoning AI Agent with codebase tools to answer questions.",
+)
+def ask_agent_root(req: AgentAskRequest) -> AgentAskResponse:
+    return process_agent_question(req)
+
+
+@router.post(
+    "/agent/execute",
+    response_model=AgentAskResponse,
+    summary="Execute AI Agent on Codebase",
+    description="Executes DevPilot multi-step reasoning AI Agent with codebase tools to answer questions.",
+)
+def execute_agent(req: AgentAskRequest) -> AgentAskResponse:
+    return process_agent_question(req)

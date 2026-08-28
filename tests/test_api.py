@@ -294,6 +294,7 @@ def test_openapi_schema(client):
     assert "/api/graph/impact" in schema["paths"]
     assert "/api/search/symbol" in schema["paths"]
     assert "/api/agent/ask" in schema["paths"]
+    assert "/api/ask" in schema["paths"]
 
 
 def test_swagger_docs(client):
