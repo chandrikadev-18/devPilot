@@ -25,6 +25,7 @@ from app.agent.tools import (
     create_get_impact_tool,
     create_get_last_commit_tool,
     create_get_recent_commits_tool,
+    create_get_repository_context_tool,
     create_read_file_tool,
     create_search_code_tool,
     resolve_safe_path,
@@ -110,6 +111,10 @@ def create_default_tool_registry(
     file_dep_spec = create_get_file_dependencies_tool(project_root=root)
     registry.register(Tool(**file_dep_spec))
 
+    # 16. get_repository_context (v1.6)
+    repo_ctx_spec = create_get_repository_context_tool(project_root=root)
+    registry.register(Tool(**repo_ctx_spec))
+
     return registry
 
 
@@ -164,4 +169,5 @@ __all__ = [
     "create_get_dependents_tool",
     "create_get_impact_tool",
     "create_get_file_dependencies_tool",
+    "create_get_repository_context_tool",
 ]

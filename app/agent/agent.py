@@ -130,9 +130,10 @@ CRITICAL RULES & PRESENTATION FORMAT:
    - "What does <symbol> depend on?": Use get_dependencies.
    - "What depends on <symbol>?": Use get_dependents.
    - "What files does <file> depend on?": Use get_file_dependencies.
+   - "Which tests cover <symbol>?" or repository context / test discovery: Use get_repository_context to gather unified context including tests, graph relationships, source definitions, and Git history.
 
 8. Workflow rules:
-   - Step 1: ALWAYS call find_symbol with symbol_name="<symbol>" first for symbol explanation or relationship questions.
+   - Step 1: ALWAYS call find_symbol with symbol_name="<symbol>" first for symbol explanation or relationship questions (or get_repository_context when test coverage or multi-faceted context is requested).
    - Step 2: If find_symbol returns an exact match, use the resolved canonical symbol directly for specialized graph tools (get_impact, get_callees, get_callers) or read_file.
    - Step 3: Do NOT execute broad search_code queries once a symbol is resolved.
    - Step 4: Synthesize the final structured answer immediately (target: 1-2 tool calls).

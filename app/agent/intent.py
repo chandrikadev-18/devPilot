@@ -21,6 +21,7 @@ class QuestionIntent(str, Enum):
     FILE_DEPENDENCIES = "FILE_DEPENDENCIES"
     DEFINITION = "DEFINITION"
     EXPLANATION = "EXPLANATION"
+    REPOSITORY_CONTEXT = "REPOSITORY_CONTEXT"
     SEARCH = "SEARCH"
 
 
@@ -199,7 +200,25 @@ def classify_question_intent(question: str) -> IntentClassification:
                 preferred_tools=["find_symbol"],
             )
 
-    # 8. EXPLANATION Intent (Explain X, What does X do?)
+    # 8. REPOSITORY_CONTEXT Intent (tests covering X, context for X, history/repo intelligence)
+    context_patterns = [
+        r"(?:which|what)\s+tests?\s+(?:cover|test)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"tests?\s+(?:covering|for)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"(?:what|show|get)\s+(?:is\s+the\s+)?(?:repository\s+)?context\s+(?:for|of|on)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+        r"why\s+was\s+(?:the\s+)?([a-zA-Z0-9_.]+?)\s+(?:changed|modified|updated)",
+        r"repository\s+intelligence\s+(?:for|on|about)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
+    ]
+    for pat in context_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym = _clean_symbol_candidate(m.group(1))
+            return IntentClassification(
+                intent=QuestionIntent.REPOSITORY_CONTEXT,
+                target_symbol=sym,
+                preferred_tools=["get_repository_context"],
+            )
+
+    # 9. EXPLANATION Intent (Explain X, What does X do?)
     explain_patterns = [
         r"^explain\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?$",
         r"explain\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class|\s+module)",
@@ -221,3 +240,4 @@ def classify_question_intent(question: str) -> IntentClassification:
         intent=QuestionIntent.SEARCH,
         preferred_tools=["search_code", "read_file"],
     )
+

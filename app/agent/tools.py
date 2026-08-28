@@ -1153,3 +1153,108 @@ def create_get_file_dependencies_tool(
         "func": get_file_dependencies_tool,
         "safety_level": "read_only",
     }
+
+
+def create_get_repository_context_tool(
+    graph: Optional[Any] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Factory for get_repository_context tool."""
+    root = (project_root or Path.cwd()).resolve()
+
+    def get_repository_context_tool(
+        question: str,
+        symbol: Optional[str] = None,
+        file_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Gathers unified repository intelligence including symbols, source code, graph relations, tests, and Git history."""
+        from app.context.engine import ContextEngine
+
+        active_graph = _resolve_graph(graph, root)
+        engine = ContextEngine(project_root=root, graph=active_graph)
+        context = engine.build_context(
+            question=question,
+            symbol=symbol,
+            file_path=file_path,
+        )
+
+        sources: List[Dict[str, Any]] = []
+
+        # Track symbol sources
+        for s in context.symbols:
+            sources.append({
+                "source_type": "symbol",
+                "symbol_name": s.name,
+                "file_path": s.file_path,
+                "start_line": s.start_line,
+                "end_line": s.end_line,
+            })
+
+        # Track graph callers/callees/deps
+        for c in context.callers:
+            sources.append({
+                "source_type": "graph",
+                "symbol_name": c.get("name"),
+                "file_path": c.get("file_path"),
+                "start_line": c.get("start_line"),
+                "relationship": "CALLER",
+            })
+        for c in context.callees:
+            sources.append({
+                "source_type": "graph",
+                "symbol_name": c.get("name"),
+                "file_path": c.get("file_path"),
+                "start_line": c.get("start_line"),
+                "relationship": "CALLEE",
+            })
+        for d in context.dependencies:
+            sources.append({
+                "source_type": "graph",
+                "symbol_name": d.get("name"),
+                "file_path": d.get("file_path"),
+                "start_line": d.get("start_line"),
+                "relationship": f"DEPENDENCY_D{d.get('depth', 1)}",
+            })
+
+        # Track related tests
+        for t in context.related_tests:
+            sources.append({
+                "source_type": "test",
+                "file_path": t.test_file,
+                "symbol_name": t.test_function,
+                "start_line": t.line_number,
+                "relationship": "RELATED_TEST",
+            })
+
+        # Track git history
+        for g in context.git_history:
+            sources.append({
+                "source_type": "git",
+                "commit_hash": g.commit_hash,
+                "short_hash": g.short_hash,
+                "author": g.author,
+                "date": g.date,
+            })
+
+        return {
+            "data": context.to_dict(),
+            "formatted_text": context.to_formatted_text(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "get_repository_context",
+        "description": "Gathers deep repository intelligence combining symbol definitions, source code snippets, dependency graph (callers, callees, dependencies, dependents, impact), related tests, and Git history for a symbol or question.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "The user question or topic to gather repository context for"},
+                "symbol": {"type": "string", "description": "Optional specific symbol name to focus context gathering on (e.g. 'GraphBuilder.build')"},
+                "file_path": {"type": "string", "description": "Optional specific file path to focus context gathering on"},
+            },
+            "required": ["question"],
+        },
+        "func": get_repository_context_tool,
+        "safety_level": "read_only",
+    }
+
