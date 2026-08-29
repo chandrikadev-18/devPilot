@@ -26,6 +26,8 @@ from app.changes.executor import (
     TestExecutionFailureError,
     UnapprovedProposalError,
 )
+from app.changes.failure_analyzer import FailureAnalyzer
+from app.changes.fix_loop import FixLoopService
 from app.changes.models import (
     AutonomousFixResult,
     ChangeExecution,
@@ -38,7 +40,11 @@ from app.changes.models import (
     CodeChangePlan,
     CodeChangeProposal,
     ExecutionStatus,
+    FailureAnalysis,
     FileChangeItem,
+    FixIteration,
+    FixIterationStatus,
+    FixLoopResult,
     FixMode,
     GitChangeReview,
     GitStatusSummary,
@@ -63,6 +69,7 @@ from app.changes.rollback import RollbackManager
 from app.changes.service import SafePatchService
 from app.changes.target_resolver import ResolvedTarget, TargetResolver
 from app.changes.test_runner import TestRunner
+
 
 __all__ = [
     "CodeChangeAnalyzer",
@@ -89,7 +96,14 @@ __all__ = [
     "PatchExecutionError",
     "SyntaxValidationError",
     "TestExecutionFailureError",
+    "FailureAnalyzer",
+    "FailureAnalysis",
+    "FixLoopService",
+    "FixLoopResult",
+    "FixIteration",
+    "FixIterationStatus",
     "DiffGenerator",
+
     "GitChangeIntelligenceService",
     "TargetResolver",
     "ResolvedTarget",

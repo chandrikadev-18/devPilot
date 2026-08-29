@@ -226,5 +226,53 @@ class ChangeExecutionResponse(BaseModel):
     steps: dict = Field(default_factory=dict, description="Status of individual execution steps")
 
 
+class FixLoopRequest(BaseModel):
+
+    request: str = Field(..., min_length=1, description="Developer fix or refactoring request")
+    mode: str = Field(default="plan", description="Fix loop execution mode: 'plan' or 'execute'")
+    max_iterations: int = Field(default=3, ge=1, le=10, description="Maximum number of repair iterations")
+    force: bool = Field(default=False, description="Force execution even if working tree is dirty")
+    proposal_id: Optional[str] = Field(None, description="Optional starting proposal ID")
+    project_dir: str = Field(default=".", description="Target project directory")
+
+
+class FixIterationItem(BaseModel):
+    iteration_id: str = Field(..., description="Iteration identifier")
+    iteration_number: int = Field(..., description="Iteration sequence number")
+    execution_id: Optional[str] = Field(None, description="Execution run identifier")
+    proposal_id: Optional[str] = Field(None, description="Associated proposal identifier")
+    status: str = Field(..., description="Iteration status (PROPOSED, EXECUTING, SUCCESS, FAILED)")
+    failure_analysis: Optional[dict] = Field(None, description="Failure diagnosis if iteration failed")
+    proposed_fix_summary: str = Field(default="", description="Summary of fix proposed for this iteration")
+    patch: str = Field(default="", description="Unified diff patch applied in this iteration")
+    tests_before: Optional[dict] = Field(None, description="Test metrics before iteration")
+    tests_after: Optional[dict] = Field(None, description="Test metrics after iteration")
+    rollback_status: Optional[str] = Field(None, description="Rollback status if triggered")
+    error: Optional[str] = Field(None, description="Error message if failed")
+    changed_files: List[str] = Field(default_factory=list, description="Files modified in this iteration")
+    started_at: Optional[str] = Field(None, description="Iteration start timestamp")
+    completed_at: Optional[str] = Field(None, description="Iteration completion timestamp")
+
+
+class FixLoopResponse(BaseModel):
+    loop_id: str = Field(..., description="Unique autonomous fix loop session identifier")
+    request: str = Field(..., description="Original developer request")
+    mode: str = Field(..., description="Fix mode (plan or execute)")
+    target: str = Field(default="", description="Resolved target symbol or file")
+    target_file: str = Field(default="", description="Resolved target file path")
+    status: str = Field(..., description="Overall fix loop outcome (SUCCESS, FAILED, PLAN_ONLY)")
+    current_iteration: int = Field(default=1, description="Number of executed iterations")
+    max_iterations: int = Field(default=3, description="Configured maximum iterations")
+    iterations: List[FixIterationItem] = Field(default_factory=list, description="Detailed records of each iteration")
+    final_result: Optional[ChangeExecutionResponse] = Field(None, description="Final execution record")
+    rollback_status: Optional[str] = Field(None, description="Rollback status")
+    errors: List[str] = Field(default_factory=list, description="Errors encountered during fix loop")
+    warnings: List[str] = Field(default_factory=list, description="Warnings encountered during fix loop")
+    message: str = Field(default="", description="Outcome summary message")
+    created_at: Optional[str] = Field(None, description="Session creation timestamp")
+    completed_at: Optional[str] = Field(None, description="Session completion timestamp")
+
+
+
 
 

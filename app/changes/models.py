@@ -1183,4 +1183,210 @@ class ChangeExecution:
         return "\n".join(lines)
 
 
+@dataclass
+class FailureAnalysis:
+    """
+    Structured diagnosis of test suite and execution failures (v2.3).
+    """
+    failed_tests: List[str] = field(default_factory=list)
+    error_type: str = "UnknownError"
+    error_message: str = ""
+    traceback: str = ""
+    affected_files: List[str] = field(default_factory=list)
+    affected_symbols: List[str] = field(default_factory=list)
+    likely_root_cause: str = ""
+    confidence: float = 0.5
+    suggested_fix_direction: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "failed_tests": self.failed_tests,
+            "error_type": self.error_type,
+            "error_message": self.error_message,
+            "traceback": self.traceback,
+            "affected_files": self.affected_files,
+            "affected_symbols": self.affected_symbols,
+            "likely_root_cause": self.likely_root_cause,
+            "confidence": self.confidence,
+            "suggested_fix_direction": self.suggested_fix_direction,
+        }
+
+
+class FixIterationStatus(str, Enum):
+    ANALYZING = "ANALYZING"
+    PROPOSED = "PROPOSED"
+    APPROVED = "APPROVED"
+    EXECUTING = "EXECUTING"
+    TESTING = "TESTING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    ROLLED_BACK = "ROLLED_BACK"
+
+
+@dataclass
+class FixIteration:
+    """
+    Record of a single repair cycle in the autonomous fix loop (v2.3).
+    """
+    iteration_id: str
+    iteration_number: int
+    execution_id: Optional[str] = None
+    proposal_id: Optional[str] = None
+    status: str = "PROPOSED"
+    failure_analysis: Optional[FailureAnalysis] = None
+    proposed_fix_summary: str = ""
+    patch: str = ""
+    tests_before: Optional[Dict[str, Any]] = None
+    tests_after: Optional[Dict[str, Any]] = None
+    rollback_status: Optional[str] = None
+    error: Optional[str] = None
+    changed_files: List[str] = field(default_factory=list)
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "iteration_id": self.iteration_id,
+            "iteration_number": self.iteration_number,
+            "execution_id": self.execution_id,
+            "proposal_id": self.proposal_id,
+            "status": self.status,
+            "failure_analysis": self.failure_analysis.to_dict() if self.failure_analysis else None,
+            "proposed_fix_summary": self.proposed_fix_summary,
+            "patch": self.patch,
+            "tests_before": self.tests_before,
+            "tests_after": self.tests_after,
+            "rollback_status": self.rollback_status,
+            "error": self.error,
+            "changed_files": self.changed_files,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+        }
+
+
+@dataclass
+class FixLoopResult:
+    """
+    Outcome of an end-to-end Git-aware autonomous fix loop session (v2.3).
+    """
+    loop_id: str
+    request: str
+    mode: str = "plan"
+    target: str = ""
+    target_file: str = ""
+    status: str = "SUCCESS"
+    current_iteration: int = 1
+    max_iterations: int = 3
+    iterations: List[FixIteration] = field(default_factory=list)
+    final_result: Optional[ChangeExecution] = None
+    rollback_status: Optional[str] = None
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    message: str = ""
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "loop_id": self.loop_id,
+            "request": self.request,
+            "mode": self.mode,
+            "target": self.target,
+            "target_file": self.target_file,
+            "status": self.status,
+            "current_iteration": self.current_iteration,
+            "max_iterations": self.max_iterations,
+            "iterations": [it.to_dict() for it in self.iterations],
+            "final_result": self.final_result.to_dict() if self.final_result else None,
+            "rollback_status": self.rollback_status,
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "message": self.message,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+        }
+
+    def to_formatted_text(self) -> str:
+        lines = [
+            "DevPilot v2.3 — Autonomous Fix Loop",
+            "────────────────────────────────────",
+            "",
+            "Request:",
+            self.request,
+            "",
+            "Target:",
+            self.target or self.target_file or "Unknown",
+        ]
+
+        if self.mode == "plan":
+            lines.extend([
+                "",
+                "Mode: PLAN (Dry run — no files modified)",
+                f"Status: {self.status}",
+            ])
+            if self.message:
+                lines.extend(["", f"Message: {self.message}"])
+            return "\n".join(lines)
+
+        for it in self.iterations:
+            lines.extend([
+                "",
+                "────────────────────────────────────",
+                f"Iteration: {it.iteration_number}/{self.max_iterations}",
+                "",
+            ])
+            if it.proposed_fix_summary:
+                lines.extend([
+                    "Proposal:",
+                    it.proposed_fix_summary,
+                    "",
+                ])
+            lines.extend([
+                "Approval:",
+                "APPROVED",
+                "",
+                "Execution:",
+                it.status,
+            ])
+            if it.tests_after is not None:
+                is_pass = it.tests_after.get("is_success", False) if isinstance(it.tests_after, dict) else getattr(it.tests_after, "is_success", False)
+                lines.extend([
+                    "",
+                    "Tests:",
+                    "PASS" if is_pass else "FAILED",
+                ])
+            if it.failure_analysis:
+                fa = it.failure_analysis
+                lines.extend([
+                    "",
+                    "Failure Analysis:",
+                    f"{fa.error_type}: {fa.error_message}" if fa.error_message else fa.error_type,
+                    "",
+                    "Suggested Fix:",
+                    fa.suggested_fix_direction or fa.likely_root_cause or "Refine patch implementation",
+                ])
+
+        lines.extend([
+            "",
+            "────────────────────────────────────",
+            "Final Status:",
+            self.status,
+        ])
+
+        if self.rollback_status and self.rollback_status != "NONE":
+            lines.extend([
+                "",
+                "Rollback:",
+                self.rollback_status,
+            ])
+
+        if self.errors:
+            lines.extend(["", f"Reason:\n{self.errors[0]}"])
+        elif self.message:
+            lines.extend(["", f"Message:\n{self.message}"])
+
+        return "\n".join(lines)
+
+
+
 

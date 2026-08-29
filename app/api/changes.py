@@ -26,12 +26,16 @@ from app.schemas.changes import (
     RejectProposalRequest,
     ExecuteProposalRequest,
     ChangeExecutionResponse,
+    FixLoopRequest,
+    FixLoopResponse,
     PlanChangeRequest,
     PlanChangeResponse,
+
     ReviewChangeRequest,
     ReviewChangeResponse,
     TestRecommendationItem,
 )
+
 
 
 router = APIRouter(prefix="/changes", tags=["Code Change Intelligence"])
@@ -640,6 +644,54 @@ def execute_proposal_post(
     project_dir: str = Query(".", description="Target project directory"),
 ) -> ChangeExecutionResponse:
     return _run_execute_proposal(proposal_id=proposal_id, body=body, project_dir=project_dir)
+
+
+def _run_fix_loop(
+    request: str,
+    mode: str = "plan",
+    max_iterations: int = 3,
+    force: bool = False,
+    proposal_id: Optional[str] = None,
+    project_dir: str = ".",
+) -> FixLoopResponse:
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        raise HTTPException(status_code=400, detail=f"Project directory does not exist: '{project_dir}'")
+
+    from app.changes.fix_loop import FixLoopService
+
+    try:
+        service = FixLoopService(project_root=root)
+        result = service.fix(
+            request=request,
+            mode=mode,
+            max_iterations=max_iterations,
+            force=force,
+            proposal_id=proposal_id,
+        )
+        return FixLoopResponse(**result.to_dict())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error executing autonomous fix loop: {e}")
+
+
+@router.post(
+    "/fix-loop",
+    response_model=FixLoopResponse,
+    summary="Autonomous Fix Loop (POST)",
+    description="Executes a controlled, Git-aware autonomous repair loop with iterative failure analysis, patch synthesis, test verification, and safe rollback.",
+)
+def fix_loop_post(
+    body: FixLoopRequest,
+) -> FixLoopResponse:
+    return _run_fix_loop(
+        request=body.request,
+        mode=body.mode,
+        max_iterations=body.max_iterations,
+        force=body.force,
+        proposal_id=body.proposal_id,
+        project_dir=body.project_dir,
+    )
+
 
 
 

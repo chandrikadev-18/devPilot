@@ -2293,7 +2293,57 @@ def run_execute(
         sys.exit(1)
 
 
+def run_fix_loop(
+    request: str,
+    mode: str = "plan",
+    max_iterations: int = 3,
+    force: bool = False,
+    proposal_id: Optional[str] = None,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """
+    Executes the DevPilot v2.3 Git-Aware Autonomous Fix Loop.
+    """
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        msg = f"Project directory not found: {root}"
+        if as_json:
+            print(json.dumps({"error": msg, "status": "FAILED"}, indent=2))
+        else:
+            print(f"Error: {msg}", file=sys.stderr)
+        sys.exit(1)
+
+    from app.changes.fix_loop import FixLoopService
+
+    try:
+        service = FixLoopService(project_root=root)
+        result = service.fix(
+            request=request,
+            mode=mode,
+            max_iterations=max_iterations,
+            force=force,
+            proposal_id=proposal_id,
+        )
+
+        if as_json:
+            print(json.dumps(result.to_dict(), indent=2))
+        else:
+            print(result.to_formatted_text())
+
+        if result.status == "FAILED":
+            sys.exit(1)
+
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "status": "FAILED"}, indent=2))
+        else:
+            print(f"Error in autonomous fix loop: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
+
     """Main CLI entry point."""
     
     # Intercept arguments for backward compatibility
@@ -2339,9 +2389,11 @@ def main():
         "reject",
         "execute",
         "fix",
+        "fix-loop",
         "-h",
         "--help",
     ]
+
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
@@ -2626,7 +2678,18 @@ def main():
     fix_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     fix_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # fix-loop subcommand (v2.3 Git-Aware Autonomous Fix Loop)
+    fix_loop_parser = subparsers.add_parser("fix-loop", help="Execute Git-aware autonomous fix loop with failure analysis and safe retries")
+    fix_loop_parser.add_argument("request", type=str, help="Developer change or repair request")
+    fix_loop_parser.add_argument("--mode", type=str, choices=["plan", "execute"], default="plan", help="Fix loop mode: 'plan' (dry run) or 'execute' (controlled repair)")
+    fix_loop_parser.add_argument("--max-iterations", type=int, default=3, help="Maximum number of repair iterations (default: 3)")
+    fix_loop_parser.add_argument("--force", action="store_true", help="Force execution even if working tree has uncommitted modifications")
+    fix_loop_parser.add_argument("--proposal-id", type=str, default=None, help="Optional starting proposal ID")
+    fix_loop_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    fix_loop_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
     args = parser.parse_args()
+
     
     if args.command == "scan":
         run_scan(args.directory)
@@ -2877,7 +2940,18 @@ def main():
             project_dir=args.project_dir,
             as_json=args.json,
         )
+    elif args.command == "fix-loop":
+        run_fix_loop(
+            request=args.request,
+            mode=args.mode,
+            max_iterations=args.max_iterations,
+            force=args.force,
+            proposal_id=getattr(args, "proposal_id", None),
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
 
 
 if __name__ == "__main__":
+
     main()
