@@ -7,6 +7,7 @@ and deterministic risk evaluation.
 
 from dataclasses import dataclass, field
 from enum import Enum
+import re
 from typing import Any, Dict, List, Optional
 
 
@@ -437,6 +438,179 @@ class CodeChangeProposal:
             sections.append("\n".join(w_lines))
 
         return "\n\n".join(sections)
+
+
+class ProposalStatus(str, Enum):
+    PROPOSAL_ONLY = "PROPOSAL_ONLY"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    APPLYING = "APPLYING"
+    APPLIED = "APPLIED"
+    VALIDATED = "VALIDATED"
+    FAILED = "FAILED"
+    ROLLED_BACK = "ROLLED_BACK"
+
+
+@dataclass
+class ChangeProposal:
+    """
+    Structured, reviewable code change proposal generated from a natural language request (v2.1 & v2.2).
+    """
+    request: str
+    proposal_id: Optional[str] = None
+    target_symbol: Optional[str] = None
+    target_file: Optional[str] = None
+    target_lines: Optional[str] = None
+    change_summary: str = ""
+    affected_files: List[str] = field(default_factory=list)
+    affected_symbols: List[str] = field(default_factory=list)
+    proposed_changes: List[str] = field(default_factory=list)
+    patch: str = ""
+    tests_to_update: List[str] = field(default_factory=list)
+    tests_to_add: List[str] = field(default_factory=list)
+    risk: str = "LOW"
+    reasoning: str = ""
+    confidence: Optional[float] = 1.0
+    warnings: List[str] = field(default_factory=list)
+    unverified_assumptions: List[str] = field(default_factory=list)
+    status: str = "PENDING_APPROVAL"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    approved_at: Optional[str] = None
+    rejected_at: Optional[str] = None
+    applied_at: Optional[str] = None
+    decision: Optional[str] = None
+    decision_reason: Optional[str] = None
+    target_content_hash: Optional[str] = None
+
+    @property
+    def target(self) -> str:
+        if self.target_symbol and self.target_file:
+            loc = f":{self.target_lines}" if self.target_lines else ""
+            return f"{self.target_symbol} ({self.target_file}{loc})"
+        return self.target_symbol or self.target_file or "Unknown"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converts ChangeProposal to a clean, stable JSON serializable dictionary."""
+        d = {
+            "proposal_id": self.proposal_id,
+            "request": self.request,
+            "target_symbol": self.target_symbol,
+            "target_file": self.target_file,
+            "target_lines": self.target_lines,
+            "change_summary": self.change_summary,
+            "affected_files": self.affected_files,
+            "affected_symbols": self.affected_symbols,
+            "proposed_changes": self.proposed_changes,
+            "patch": self.patch,
+            "tests_to_update": self.tests_to_update,
+            "tests_to_add": self.tests_to_add,
+            "risk": self.risk,
+            "reasoning": self.reasoning,
+            "confidence": self.confidence,
+            "warnings": self.warnings,
+            "unverified_assumptions": self.unverified_assumptions,
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "approved_at": self.approved_at,
+            "rejected_at": self.rejected_at,
+            "applied_at": self.applied_at,
+            "decision": self.decision,
+            "decision_reason": self.decision_reason,
+            "target_content_hash": self.target_content_hash,
+        }
+        return d
+
+    def to_formatted_text(self) -> str:
+        """Renders DevPilot Change Proposal formatted text."""
+        lines = [
+            "DevPilot v2.1 — Change Proposal",
+            "────────────────────────────────",
+            "",
+        ]
+
+        if self.proposal_id:
+            lines.extend([
+                f"Proposal ID:\n{self.proposal_id}",
+                "",
+            ])
+
+        lines.extend([
+            "Request:",
+            self.request,
+            "",
+            "Target:",
+        ])
+
+        if self.target_symbol and self.target_file:
+            loc = f":{self.target_lines}" if self.target_lines else ""
+            lines.append(self.target_symbol)
+            lines.append(f"{self.target_file}{loc}")
+        elif self.target_file:
+            loc = f":{self.target_lines}" if self.target_lines else ""
+            lines.append(f"{self.target_file}{loc}")
+        else:
+            lines.append(self.target_symbol or "Unknown")
+
+        lines.extend([
+            "",
+            "Risk:",
+            self.risk,
+            "",
+            "Proposed Changes:",
+        ])
+
+        if self.proposed_changes:
+            for idx, ch in enumerate(self.proposed_changes, start=1):
+                # Clean if already prefixed with a number
+                ch_text = re.sub(r"^\d+\.\s*", "", ch)
+                lines.append(f"{idx}. {ch_text}")
+        else:
+            lines.append("1. (No specific modifications proposed)")
+
+        lines.extend(["", "Files:"])
+        if self.affected_files:
+            for f in self.affected_files:
+                lines.append(f"- {f}")
+        elif self.target_file:
+            lines.append(f"- {self.target_file}")
+        else:
+            lines.append("- (None)")
+
+        lines.extend(["", "Tests:"])
+        all_tests = list(self.tests_to_update) + list(self.tests_to_add)
+        if all_tests:
+            for t in all_tests:
+                lines.append(f"- {t}")
+        else:
+            lines.append("- (None identified)")
+
+        lines.extend(["", "Patch:"])
+        if self.patch and self.patch.strip():
+            lines.append(self.patch.strip())
+        else:
+            lines.append("(No patch generated)")
+
+        lines.extend([
+            "",
+            "Status:",
+            self.status,
+        ])
+
+        if self.decision_reason:
+            lines.extend([
+                "",
+                f"Decision Note:\n{self.decision_reason}",
+            ])
+
+        if self.warnings:
+            lines.extend(["", "Warnings:"])
+            for w in self.warnings:
+                lines.append(f"⚠ {w}")
+
+        return "\n".join(lines)
 
 
 @dataclass
@@ -921,6 +1095,92 @@ class AutonomousFixResult:
             ])
 
         return "\n".join(lines).strip()
+
+
+class ExecutionStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    VALIDATED = "VALIDATED"
+    APPLIED = "APPLIED"
+    TESTING = "TESTING"
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    ROLLED_BACK = "ROLLED_BACK"
+
+
+@dataclass
+class ChangeExecution:
+    """
+    Complete structured record of executing an approved change proposal (v2.2).
+    """
+    proposal_id: str
+    execution_id: Optional[str] = None
+    status: str = "PENDING"
+    mode: str = "APPROVED_EXECUTION"
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    changed_files: List[str] = field(default_factory=list)
+    test_result: Optional[TestValidationResult] = None
+    validation_result: Optional[PatchValidationResult] = None
+    error: Optional[str] = None
+    rollback_status: Optional[str] = None
+    checkpoint_id: Optional[str] = None
+    diff: Optional[str] = None
+    steps: Dict[str, str] = field(default_factory=lambda: {
+        "pre_flight": "PENDING",
+        "patch_validation": "PENDING",
+        "patch_application": "PENDING",
+        "tests": "PENDING",
+        "repo_state": "PENDING",
+    })
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "execution_id": self.execution_id,
+            "proposal_id": self.proposal_id,
+            "status": self.status,
+            "mode": self.mode,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "changed_files": self.changed_files,
+            "test_result": self.test_result.to_dict() if self.test_result else None,
+            "validation_result": self.validation_result.to_dict() if self.validation_result else None,
+            "error": self.error,
+            "rollback_status": self.rollback_status,
+            "checkpoint_id": self.checkpoint_id,
+            "diff": self.diff,
+            "steps": self.steps,
+        }
+
+    def to_formatted_text(self) -> str:
+        lines = [
+            "DevPilot v2.2 — Change Execution",
+            "────────────────────────────────",
+            f"Proposal: {self.proposal_id}",
+            "Status: APPROVED",
+            f"Execution: {self.execution_id or 'unknown'}",
+            "",
+            f"Pre-flight: {self.steps.get('pre_flight', 'PENDING')}",
+            f"Patch validation: {self.steps.get('patch_validation', 'PENDING')}",
+            f"Patch application: {self.steps.get('patch_application', 'PENDING')}",
+            f"Tests: {self.steps.get('tests', 'PENDING')}",
+            f"Repository state: {self.steps.get('repo_state', 'PENDING')}",
+            "",
+            f"Execution Result: {self.status}",
+        ]
+
+        if self.rollback_status and self.rollback_status != "NONE":
+            lines.append(f"Rollback: {self.rollback_status}")
+
+        if self.error:
+            lines.extend(["", f"Error: {self.error}"])
+
+        if self.changed_files and self.status == "SUCCESS":
+            lines.extend(["", f"Changed Files ({len(self.changed_files)}):"])
+            for f in self.changed_files:
+                lines.append(f"  • {f}")
+
+        return "\n".join(lines)
 
 
 

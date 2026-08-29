@@ -83,6 +83,7 @@ from app.graph import (
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_router
+from app.api.changes import router as changes_router
 
 app = FastAPI(
     title="DevPilot API",
@@ -102,6 +103,8 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+app.include_router(changes_router)
+
 
 
 
@@ -1935,6 +1938,65 @@ def run_review(project_dir: str = ".", as_json: bool = False):
         sys.exit(1)
 
 
+def run_changes(project_dir: str = ".", as_json: bool = False):
+    """
+    DevPilot v2.0 Git-Aware Change Intelligence.
+    Inspects the current Git working tree and analyzes changed files, symbols,
+    dependency impacts, relevant tests, risk, and pre-commit recommendations.
+    """
+    from app.changes.git_intelligence import GitChangeIntelligenceService
+    from app.git.repository import NotAGitRepositoryError
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        service = GitChangeIntelligenceService(project_root=root)
+        summary = service.analyze_working_tree()
+
+        if as_json:
+            print(json.dumps(summary.to_dict(), indent=2))
+            return
+
+        print(summary.to_formatted_text())
+    except NotAGitRepositoryError as e:
+        if as_json:
+            print(json.dumps({
+                "error": str(e),
+                "branch": "unknown",
+                "changed_files": [],
+                "changed_symbols": [],
+                "impacted_symbols": [],
+                "impacted_files": [],
+                "relevant_tests": [],
+                "risk": "LOW",
+                "risk_reason": str(e),
+                "warnings": [str(e)],
+            }, indent=2))
+            return
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        if as_json:
+            print(json.dumps({
+                "error": str(e),
+                "branch": "unknown",
+                "changed_files": [],
+                "changed_symbols": [],
+                "impacted_symbols": [],
+                "impacted_files": [],
+                "relevant_tests": [],
+                "risk": "HIGH",
+                "risk_reason": str(e),
+                "warnings": [str(e)],
+            }, indent=2))
+            return
+        print(f"Error analyzing Git changes: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def run_fix(
     request: str,
     mode: str = "plan",
@@ -1977,6 +2039,260 @@ def run_fix(
         sys.exit(1)
 
 
+def run_propose(request: str, project_dir: str = ".", as_json: bool = False):
+    """
+    DevPilot v2.1 Intelligent Change Proposal Generation.
+    Analyzes natural-language change request and generates a structured, reviewable
+    proposal with unified diff patch and risk analysis without modifying files.
+    """
+    from app.changes.proposal_generator import ChangeProposalGenerator
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        generator = ChangeProposalGenerator(project_root=root)
+        proposal = generator.propose(change_request=request)
+
+        if as_json:
+            print(json.dumps(proposal.to_dict(), indent=2))
+            return
+
+        print(proposal.to_formatted_text())
+    except Exception as e:
+        if as_json:
+            print(json.dumps({
+                "error": str(e),
+                "request": request,
+                "target_symbol": None,
+                "target_file": None,
+                "target_lines": None,
+                "change_summary": f"Error: {str(e)}",
+                "affected_files": [],
+                "affected_symbols": [],
+                "proposed_changes": [],
+                "patch": "",
+                "tests_to_update": [],
+                "tests_to_add": [],
+                "risk": "HIGH",
+                "reasoning": str(e),
+                "confidence": 0.0,
+                "warnings": [str(e)],
+                "unverified_assumptions": [],
+                "status": "PROPOSAL_ONLY",
+            }, indent=2))
+            sys.exit(1)
+        print(f"Error generating change proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_proposal(proposal_id: str, project_dir: str = ".", as_json: bool = False):
+    """
+    Inspects a change proposal by ID.
+    """
+    from app.changes.approval import ApprovalService, ProposalNotFoundError
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        service = ApprovalService(project_root=root)
+        proposal = service.get_proposal(proposal_id)
+
+        if as_json:
+            print(json.dumps(proposal.to_dict(), indent=2))
+            return
+
+        print(proposal.to_formatted_text())
+    except ProposalNotFoundError as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id}, indent=2))
+            sys.exit(1)
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id}, indent=2))
+            sys.exit(1)
+        print(f"Error retrieving proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_approve(
+    proposal_id: str,
+    reason: Optional[str] = None,
+    force: bool = False,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """
+    Approves a pending change proposal.
+    """
+    from app.changes.approval import (
+        AlreadyAppliedError,
+        ApprovalService,
+        DuplicateApprovalError,
+        HighRiskConfirmationError,
+        ProposalNotFoundError,
+        RejectedProposalError,
+        StaleProposalError,
+    )
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        service = ApprovalService(project_root=root)
+        proposal = service.approve_proposal(
+            proposal_id=proposal_id,
+            reason=reason,
+            force=force,
+        )
+
+        if as_json:
+            print(json.dumps(proposal.to_dict(), indent=2))
+            return
+
+        print("DevPilot v2.2 — Proposal Approved")
+        print("──────────────────────────────────")
+        print(f"Proposal ID: {proposal.proposal_id}")
+        print(f"Status:      {proposal.status}")
+        print(f"Decision:    {proposal.decision}")
+        if proposal.decision_reason:
+            print(f"Reason:      {proposal.decision_reason}")
+        print(f"Approved At: {proposal.approved_at}")
+        print(f"Target:      {proposal.target_symbol or proposal.target_file}")
+        print(f"Risk:        {proposal.risk}")
+    except (ProposalNotFoundError, DuplicateApprovalError, RejectedProposalError, AlreadyAppliedError, StaleProposalError, HighRiskConfirmationError) as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id}, indent=2))
+            sys.exit(1)
+        print(f"Error approving proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id}, indent=2))
+            sys.exit(1)
+        print(f"Error approving proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_reject(
+    proposal_id: str,
+    reason: Optional[str] = None,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """
+    Rejects a pending change proposal.
+    """
+    from app.changes.approval import (
+        AlreadyAppliedError,
+        ApprovalService,
+        ProposalNotFoundError,
+    )
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        service = ApprovalService(project_root=root)
+        proposal = service.reject_proposal(
+            proposal_id=proposal_id,
+            reason=reason,
+        )
+
+        if as_json:
+            print(json.dumps(proposal.to_dict(), indent=2))
+            return
+
+        print("DevPilot v2.2 — Proposal Rejected")
+        print("──────────────────────────────────")
+        print(f"Proposal ID: {proposal.proposal_id}")
+        print(f"Status:      {proposal.status}")
+        print(f"Decision:    {proposal.decision}")
+        if proposal.decision_reason:
+            print(f"Reason:      {proposal.decision_reason}")
+        print(f"Rejected At: {proposal.rejected_at}")
+    except (ProposalNotFoundError, AlreadyAppliedError) as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id}, indent=2))
+            sys.exit(1)
+        print(f"Error rejecting proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id}, indent=2))
+            sys.exit(1)
+        print(f"Error rejecting proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_execute(
+    proposal_id: str,
+    project_dir: str = ".",
+    no_tests: bool = False,
+    as_json: bool = False,
+):
+    """
+    Safely executes an approved change proposal.
+    """
+    from app.changes.approval import (
+        AlreadyAppliedError,
+        ProposalNotFoundError,
+        RejectedProposalError,
+    )
+    from app.changes.executor import (
+        ChangeExecutor,
+        InvalidPatchError,
+        StalePatchError,
+        UnapprovedProposalError,
+    )
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        executor = ChangeExecutor(project_root=root)
+        execution = executor.execute(
+            proposal_id=proposal_id,
+            run_tests=not no_tests,
+        )
+
+        if as_json:
+            print(json.dumps(execution.to_dict(), indent=2))
+            if execution.status != "SUCCESS":
+                sys.exit(1)
+            return
+
+        print(execution.to_formatted_text())
+        if execution.status != "SUCCESS":
+            sys.exit(1)
+
+    except (ProposalNotFoundError, UnapprovedProposalError, AlreadyAppliedError, RejectedProposalError, StalePatchError, InvalidPatchError) as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id, "status": "FAILED"}, indent=2))
+            sys.exit(1)
+        print(f"Error executing proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e), "proposal_id": proposal_id, "status": "FAILED"}, indent=2))
+            sys.exit(1)
+        print(f"Error executing proposal: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     
@@ -2016,6 +2332,12 @@ def main():
         "apply-change",
         "rollback",
         "review",
+        "changes",
+        "propose",
+        "proposal",
+        "approve",
+        "reject",
+        "execute",
         "fix",
         "-h",
         "--help",
@@ -2250,6 +2572,46 @@ def main():
     review_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     review_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # changes subcommand (v2.0 Git-Aware Change Intelligence)
+    changes_parser = subparsers.add_parser("changes", help="Analyze uncommitted Git working tree changes, symbols, blast radius, tests, and risk")
+    changes_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    changes_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # propose subcommand (v2.1 Intelligent Change Proposal Generation)
+    propose_parser = subparsers.add_parser("propose", help="Generate reviewable code change proposal, diff patch, and risk analysis without modifying files")
+    propose_parser.add_argument("request", type=str, help="Natural language change request (e.g. 'Add logging when GraphBuilder.build starts and finishes')")
+    propose_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    propose_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # proposal subcommand (v2.2 Inspect Proposal)
+    proposal_parser = subparsers.add_parser("proposal", help="Inspect a change proposal by ID")
+    proposal_parser.add_argument("proposal_id", type=str, help="Proposal ID (e.g. prop_20260829_...)")
+    proposal_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    proposal_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # approve subcommand (v2.2 Approve Proposal)
+    approve_parser = subparsers.add_parser("approve", help="Approve a change proposal with human-in-the-loop validation")
+    approve_parser.add_argument("proposal_id", type=str, help="Proposal ID to approve")
+    approve_parser.add_argument("--reason", type=str, default=None, help="Optional approval rationale or comment")
+    approve_parser.add_argument("--force", action="store_true", help="Explicit confirmation for HIGH risk proposals")
+    approve_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    approve_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # reject subcommand (v2.2 Reject Proposal)
+    reject_parser = subparsers.add_parser("reject", help="Reject a change proposal")
+    reject_parser.add_argument("proposal_id", type=str, help="Proposal ID to reject")
+    reject_parser.add_argument("--reason", type=str, default=None, help="Optional rejection rationale or comment")
+    reject_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    reject_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # execute subcommand (v2.2 Execute Approved Proposal)
+    execute_parser = subparsers.add_parser("execute", help="Safely execute an approved change proposal with tests and rollback")
+    execute_parser.add_argument("proposal_id", type=str, help="Proposal ID to execute")
+    execute_parser.add_argument("--no-tests", action="store_true", help="Skip post-apply validation tests")
+    execute_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    execute_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+
     # plan subcommand (v1.8 alias for plan-change)
     plan_parser = subparsers.add_parser("plan", help="Plan code changes, impact, affected files, tests, and implementation order")
     plan_parser.add_argument("request", type=str, help="Developer change request (e.g. 'Modify GraphBuilder.build')")
@@ -2461,7 +2823,47 @@ def main():
             project_dir=args.project_dir,
             as_json=args.json,
         )
+    elif args.command == "changes":
+        run_changes(
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "propose":
+        run_propose(
+            request=args.request,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "proposal":
+        run_proposal(
+            proposal_id=args.proposal_id,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "approve":
+        run_approve(
+            proposal_id=args.proposal_id,
+            reason=args.reason,
+            force=args.force,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "reject":
+        run_reject(
+            proposal_id=args.proposal_id,
+            reason=args.reason,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "execute":
+        run_execute(
+            proposal_id=args.proposal_id,
+            project_dir=args.project_dir,
+            no_tests=getattr(args, "no_tests", False),
+            as_json=args.json,
+        )
     elif args.command == "plan":
+
         run_plan_change(
             change_request=args.request,
             project_dir=args.project_dir,

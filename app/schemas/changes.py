@@ -136,3 +136,95 @@ class AutonomousFixResponse(BaseModel):
     message: str = Field(default="", description="Summary message")
     data: Optional[dict] = Field(default=None, description="Raw fix execution payload")
 
+
+class GitChangeItem(BaseModel):
+    file_path: str = Field(..., description="Relative file path")
+    change_type: str = Field(..., description="Change type (ADDED, MODIFIED, DELETED, RENAMED)")
+    staged: bool = Field(default=False, description="Whether the change is staged in Git index")
+    unstaged: bool = Field(default=True, description="Whether the change is unstaged in working tree")
+    additions: int = Field(default=0, description="Lines added")
+    deletions: int = Field(default=0, description="Lines deleted")
+    diff: str = Field(default="", description="Unified diff for this file")
+
+
+class GitChangeSummaryResponse(BaseModel):
+    branch: str = Field(..., description="Current Git branch or reference")
+    changed_files: List[GitChangeItem] = Field(default_factory=list, description="List of changed files in working tree")
+    changed_symbols: List[str] = Field(default_factory=list, description="List of altered AST symbols")
+    impacted_symbols: List[str] = Field(default_factory=list, description="List of affected dependent symbols")
+    impacted_files: List[str] = Field(default_factory=list, description="List of affected dependent files")
+    relevant_tests: List[str] = Field(default_factory=list, description="List of recommended relevant tests")
+    risk: str = Field(..., description="Deterministic risk level (LOW, MEDIUM, HIGH)")
+    risk_reason: str = Field(default="", description="Explainable reason for assigned risk level")
+    warnings: List[str] = Field(default_factory=list, description="Warnings or non-fatal issues encountered")
+
+
+class ChangeProposalRequest(BaseModel):
+    request: str = Field(..., min_length=1, description="Developer natural language change request")
+    project_dir: str = Field(default=".", description="Target project directory")
+
+
+class ChangeProposalResponse(BaseModel):
+    proposal_id: Optional[str] = Field(None, description="Unique proposal identifier")
+    request: str = Field(..., description="Original change request")
+    target_symbol: Optional[str] = Field(None, description="Resolved target symbol name")
+    target_file: Optional[str] = Field(None, description="Resolved target file path")
+    target_lines: Optional[str] = Field(None, description="Target line span")
+    change_summary: str = Field(..., description="Summary of proposed change")
+    affected_files: List[str] = Field(default_factory=list, description="List of affected files")
+    affected_symbols: List[str] = Field(default_factory=list, description="List of affected symbols")
+    proposed_changes: List[str] = Field(default_factory=list, description="Itemized proposed changes")
+    patch: str = Field(default="", description="Unified diff patch")
+    tests_to_update: List[str] = Field(default_factory=list, description="Existing tests to update")
+    tests_to_add: List[str] = Field(default_factory=list, description="New tests to add")
+    risk: str = Field(..., description="Risk assessment (LOW, MEDIUM, HIGH)")
+    reasoning: str = Field(..., description="Reasoning for risk and changes")
+    confidence: Optional[float] = Field(None, description="Confidence score")
+    warnings: List[str] = Field(default_factory=list, description="Warnings encountered")
+    unverified_assumptions: List[str] = Field(default_factory=list, description="Unverified assumptions")
+    status: str = Field(default="PENDING_APPROVAL", description="Proposal status")
+    created_at: Optional[str] = Field(None, description="Proposal creation timestamp")
+    updated_at: Optional[str] = Field(None, description="Proposal update timestamp")
+    approved_at: Optional[str] = Field(None, description="Approval timestamp")
+    rejected_at: Optional[str] = Field(None, description="Rejection timestamp")
+    applied_at: Optional[str] = Field(None, description="Application timestamp")
+    decision: Optional[str] = Field(None, description="Decision status")
+    decision_reason: Optional[str] = Field(None, description="Decision rationale")
+    target_content_hash: Optional[str] = Field(None, description="Target file hash")
+
+
+class ApproveProposalRequest(BaseModel):
+    reason: Optional[str] = Field(None, description="Approval rationale or comment")
+    force: bool = Field(default=False, description="Explicit confirmation for HIGH risk proposals")
+    project_dir: str = Field(default=".", description="Target project directory")
+
+
+class RejectProposalRequest(BaseModel):
+    reason: Optional[str] = Field(None, description="Rejection rationale or comment")
+    project_dir: str = Field(default=".", description="Target project directory")
+
+
+class ExecuteProposalRequest(BaseModel):
+    project_dir: str = Field(default=".", description="Target project directory")
+    run_tests: bool = Field(default=True, description="Run validation tests post patch application")
+
+
+class ChangeExecutionResponse(BaseModel):
+    execution_id: Optional[str] = Field(None, description="Unique execution identifier")
+    proposal_id: str = Field(..., description="Target proposal identifier")
+    status: str = Field(..., description="Execution outcome status (SUCCESS, FAILED, ROLLED_BACK)")
+    mode: str = Field(default="APPROVED_EXECUTION", description="Execution mode")
+    started_at: Optional[str] = Field(None, description="Execution start timestamp")
+    completed_at: Optional[str] = Field(None, description="Execution completion timestamp")
+    changed_files: List[str] = Field(default_factory=list, description="Files modified by execution")
+    test_result: Optional[dict] = Field(None, description="Test suite execution results")
+    validation_result: Optional[dict] = Field(None, description="Pre-apply patch validation results")
+    error: Optional[str] = Field(None, description="Error message if execution failed")
+    rollback_status: Optional[str] = Field(None, description="Rollback status if triggered")
+    checkpoint_id: Optional[str] = Field(None, description="Backup checkpoint ID")
+    diff: Optional[str] = Field(None, description="Unified diff of applied changes")
+    steps: dict = Field(default_factory=dict, description="Status of individual execution steps")
+
+
+
+
