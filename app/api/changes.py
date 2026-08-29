@@ -11,6 +11,8 @@ from app.git.repository import GitCommitNotFoundError, GitError, NotAGitReposito
 from app.schemas.changes import (
     AnalyzeChangeRequest,
     AnalyzeChangeResponse,
+    AutonomousFixRequest,
+    AutonomousFixResponse,
     ChangedSymbolItem,
     ChangeImpactItem,
     ChangePlanEvidenceItem,
@@ -266,4 +268,72 @@ def review_code_change_get(
     project_dir: str = Query(".", description="Target project directory"),
 ) -> ReviewChangeResponse:
     return _run_change_review(project_dir=project_dir)
+
+
+def _run_autonomous_fix(request: str, mode: str, force: bool, project_dir: str) -> AutonomousFixResponse:
+    if not request or not request.strip():
+        raise HTTPException(status_code=400, detail="Change request cannot be empty.")
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        raise HTTPException(status_code=400, detail=f"Project directory does not exist: '{project_dir}'")
+
+    try:
+        from app.changes.autonomous_fix import AutonomousFixService
+        from app.changes.models import FixMode
+
+        service = AutonomousFixService(project_root=root)
+        fix_mode = FixMode(mode.upper()) if mode else FixMode.PLAN
+        res = service.execute(request=request.strip(), mode=fix_mode, force=force)
+
+        return AutonomousFixResponse(
+            mode=res.mode.value if isinstance(res.mode, FixMode) else str(res.mode),
+            status=res.status,
+            request=res.request,
+            phase=res.phase,
+            applied=res.applied,
+            errors=res.errors,
+            warnings=res.warnings,
+            message=res.message,
+            data=res.to_dict(),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error executing autonomous fix: {str(e)}")
+
+
+@router.post(
+    "/fix",
+    response_model=AutonomousFixResponse,
+    summary="Autonomous Code Fix Loop (POST)",
+    description="Coordinates the autonomous fix loop across PLAN, PATCH, and AUTO modes.",
+)
+def autonomous_fix_post(
+    request: AutonomousFixRequest,
+) -> AutonomousFixResponse:
+    return _run_autonomous_fix(
+        request=request.request,
+        mode=request.mode,
+        force=request.force,
+        project_dir=request.project_dir,
+    )
+
+
+@router.get(
+    "/fix",
+    response_model=AutonomousFixResponse,
+    summary="Autonomous Code Fix Loop (GET)",
+    description="Coordinates the autonomous fix loop across PLAN, PATCH, and AUTO modes.",
+)
+def autonomous_fix_get(
+    request: str = Query(..., min_length=1, description="Developer fix or refactoring request"),
+    mode: str = Query("plan", description="Fix execution mode: 'plan', 'patch', or 'auto'"),
+    force: bool = Query(False, description="Force execution even if working tree is dirty"),
+    project_dir: str = Query(".", description="Target project directory"),
+) -> AutonomousFixResponse:
+    return _run_autonomous_fix(
+        request=request,
+        mode=mode,
+        force=force,
+        project_dir=project_dir,
+    )
 

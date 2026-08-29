@@ -13,6 +13,7 @@ from typing import List, Optional
 
 class QuestionIntent(str, Enum):
     IMPACT = "IMPACT"
+    AUTONOMOUS_FIX = "AUTONOMOUS_FIX"
     REVIEW_CHANGES = "REVIEW_CHANGES"
     CODE_CHANGE_ANALYSIS = "CODE_CHANGE_ANALYSIS"
     GIT_CHANGE_AND_IMPACT = "GIT_CHANGE_AND_IMPACT"
@@ -104,6 +105,27 @@ def classify_question_intent(question: str) -> IntentClassification:
             return IntentClassification(
                 intent=QuestionIntent.REVIEW_CHANGES,
                 preferred_tools=["review_changes"],
+            )
+
+    # 0c. AUTONOMOUS_FIX Intent (v1.9)
+    # "Analyze this bug but don't change anything", "Prepare a patch for this issue", "Fix this issue automatically and run the tests", "Fix the bug in GraphBuilder.build"
+    fix_patterns = [
+        (r"^(?:analyze|inspect)\s+(?:this\s+)?(?:bug|issue|problem|error|failure)\s+but\s+don'?t\s+change\s+anything", "plan"),
+        (r"^prepare\s+(?:a\s+)?patch\s+(?:for|to)\s+(?:this\s+)?(?:issue|bug|problem|error|failure|task|request)?\s*(.*)", "patch"),
+        (r"^(?:generate|create)\s+(?:a\s+)?patch\s+(?:for|to)\s+(.*)", "patch"),
+        (r"^fix\s+(?:this\s+)?(?:issue|bug|problem|error|failure)\s+(?:automatically|auto)\s*(?:and\s+run\s+(?:the\s+)?tests?)?", "auto"),
+        (r"^(?:automatically|auto)\s+fix\s+(.*)", "auto"),
+        (r"^fix\s+(?:the\s+)?(?:bug|issue|problem|error|failure|regression)\s+in\s+([a-zA-Z0-9_.]+(?:\.[a-zA-Z0-9_]+)?)", "plan"),
+    ]
+    for pat, fix_mode in fix_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            sym_raw = m.group(1).strip() if m.groups() and m.group(1) else ""
+            sym = _clean_symbol_candidate(sym_raw) if sym_raw else None
+            return IntentClassification(
+                intent=QuestionIntent.AUTONOMOUS_FIX,
+                target_symbol=sym,
+                preferred_tools=["autonomous_fix"],
             )
 
     # 0b. CHANGE_PLAN Intent (v1.7/v1.8)

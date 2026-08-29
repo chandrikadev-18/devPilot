@@ -3,8 +3,10 @@ DevPilot Code Change Intelligence Module.
 """
 
 from app.changes.analyzer import CodeChangeAnalyzer
+from app.changes.autonomous_fix import AutonomousFixService, FixOrchestrator
 from app.changes.detector import detect_changed_symbols
 from app.changes.models import (
+    AutonomousFixResult,
     ChangeImpact,
     ChangePlanEvidence,
     ChangeRisk,
@@ -13,6 +15,7 @@ from app.changes.models import (
     CodeChangePlan,
     CodeChangeProposal,
     FileChangeItem,
+    FixMode,
     GitChangeReview,
     GitStatusSummary,
     PatchApplicationResult,
@@ -43,6 +46,10 @@ __all__ = [
     "PatchApplier",
     "RollbackManager",
     "TestRunner",
+    "AutonomousFixService",
+    "FixOrchestrator",
+    "FixMode",
+    "AutonomousFixResult",
     "detect_changed_symbols",
     "calculate_change_risk",
     "calculate_plan_risk",

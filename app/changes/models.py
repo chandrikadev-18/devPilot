@@ -370,6 +370,10 @@ class CodeChangeProposal:
     warnings: List[str] = field(default_factory=list)
     summary: str = ""
 
+    @property
+    def patch_diff(self) -> str:
+        return self.patch
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "change_request": self.change_request,
@@ -440,6 +444,18 @@ class PatchValidationResult:
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     conflicts: List[str] = field(default_factory=list)
+
+    @property
+    def affected_files(self) -> List[str]:
+        return self.files_affected
+
+    @property
+    def lines_added(self) -> int:
+        return self.additions
+
+    @property
+    def lines_deleted(self) -> int:
+        return self.deletions
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -755,6 +771,148 @@ class GitChangeReview:
                 lines.append(f"  ⚠ {note}")
 
         return "\n".join(lines)
+
+
+class FixMode(str, Enum):
+    PLAN = "PLAN"
+    PATCH = "PATCH"
+    AUTO = "AUTO"
+
+
+@dataclass
+class AutonomousFixResult:
+    """
+    Complete result of an autonomous code fix execution (v1.9).
+    """
+    mode: FixMode
+    status: str  # 'success', 'plan_only', 'patch_only', 'failed', 'refused_dirty_tree', 'rolled_back'
+    request: str
+    phase: str  # 'analyze', 'plan', 'patch', 'validate', 'apply', 'test', 'review', 'complete', 'rollback'
+    plan: Optional[CodeChangePlan] = None
+    proposal: Optional[CodeChangeProposal] = None
+    validation: Optional[PatchValidationResult] = None
+    applied: bool = False
+    test_result: Optional[TestValidationResult] = None
+    review: Optional[GitChangeReview] = None
+    rollback: Optional[RollbackResult] = None
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    message: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "mode": self.mode.value if isinstance(self.mode, FixMode) else str(self.mode),
+            "status": self.status,
+            "request": self.request,
+            "phase": self.phase,
+            "plan": self.plan.to_dict() if self.plan else None,
+            "proposal": self.proposal.to_dict() if self.proposal else None,
+            "validation": self.validation.to_dict() if self.validation else None,
+            "applied": self.applied,
+            "test_result": self.test_result.to_dict() if self.test_result else None,
+            "review": self.review.to_dict() if self.review else None,
+            "rollback": self.rollback.to_dict() if self.rollback else None,
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "message": self.message,
+        }
+
+    def to_formatted_text(self) -> str:
+        mode_val = self.mode.value if isinstance(self.mode, FixMode) else str(self.mode)
+        lines = [
+            "DevPilot v1.9 — Autonomous Code Fix",
+            f"Mode:    {mode_val}",
+            f"Status:  {self.status.upper()}",
+            f"Request: {self.request}",
+            "═" * 56,
+        ]
+
+        if self.message:
+            lines.extend([f"Message: {self.message}", ""])
+
+        if self.plan:
+            lines.extend([
+                "Plan Overview:",
+                f"  Target: {self.plan.target_symbol or self.plan.target_file or 'Unknown'}",
+                f"  Risk:   {self.plan.risk}",
+                f"  Reason: {self.plan.reason}",
+                f"  Affected Files ({len(self.plan.affected_files)}): {', '.join(self.plan.affected_files) if self.plan.affected_files else 'None'}",
+                f"  Relevant Tests ({len(self.plan.relevant_tests)}): {', '.join(self.plan.relevant_tests[:4]) if self.plan.relevant_tests else 'None'}",
+                "",
+            ])
+
+        if self.proposal:
+            lines.extend([
+                "Patch Proposal:",
+                f"  Target: {self.proposal.target or 'Unknown'}",
+                f"  Risk:   {self.proposal.risk or 'LOW'}",
+                "",
+                "Diff Summary:",
+                self.proposal.patch or getattr(self.proposal, "patch_diff", ""),
+                "",
+            ])
+
+        if self.validation:
+            lines.extend([
+                "Patch Validation:",
+                f"  Valid: {self.validation.is_valid}",
+                f"  Files Affected: {', '.join(self.validation.affected_files)}",
+                f"  Lines: +{self.validation.lines_added} / -{self.validation.lines_deleted}",
+                "",
+            ])
+
+        if self.test_result:
+            lines.extend([
+                "Test Validation:",
+                f"  Success:   {self.test_result.is_success}",
+                f"  Passed:    {self.test_result.passed}",
+                f"  Failed:    {self.test_result.failed}",
+                f"  Exit Code: {self.test_result.exit_code}",
+                f"  Duration:  {self.test_result.execution_time:.2f}s",
+                "",
+            ])
+
+        if self.review:
+            lines.extend([
+                "Post-Apply Intelligent Review:",
+                f"  Changed Files:   {len(self.review.changed_files)}",
+                f"  Changed Symbols: {len(self.review.changed_symbols)}",
+                f"  Impact Radius:   {self.review.impact.total_affected_symbols} symbols",
+                f"  Risk Level:      {self.review.risk.level} ({self.review.risk.score}/100)",
+                "",
+            ])
+
+        if self.rollback:
+            lines.extend([
+                "Rollback Execution:",
+                f"  Status: {self.rollback.status.upper()}",
+                f"  Message: {self.rollback.message}",
+                f"  Reverted Files: {', '.join(self.rollback.reverted_files) if self.rollback.reverted_files else 'None'}",
+                "",
+            ])
+
+        if self.errors:
+            lines.extend(["Errors:"])
+            for e in self.errors:
+                lines.append(f"  ❌ {e}")
+            lines.append("")
+
+        if self.warnings:
+            lines.extend(["Warnings:"])
+            for w in self.warnings:
+                lines.append(f"  ⚠ {w}")
+            lines.append("")
+
+        if self.status == "success":
+            lines.extend([
+                "Result: Fix applied, tested, and verified successfully. Changes kept in working tree.",
+            ])
+        elif self.status == "rolled_back":
+            lines.extend([
+                "Result: Fix failed validation/tests. Repository changes were rolled back cleanly.",
+            ])
+
+        return "\n".join(lines).strip()
 
 
 

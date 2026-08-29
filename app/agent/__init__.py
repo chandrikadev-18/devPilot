@@ -13,6 +13,7 @@ from app.agent.tool_registry import Tool, ToolRegistry, ToolValidationError
 from app.agent.tools import (
     SecurityError,
     create_analyze_code_change_tool,
+    create_autonomous_fix_tool,
     create_find_symbol_tool,
     create_get_callees_tool,
     create_get_callers_tool,
@@ -162,6 +163,10 @@ def create_default_tool_registry(
     review_spec = create_review_changes_tool(project_root=root)
     registry.register(Tool(**review_spec))
 
+    # 25. autonomous_fix (v1.9)
+    fix_spec = create_autonomous_fix_tool(project_root=root)
+    registry.register(Tool(**fix_spec))
+
     return registry
 
 
@@ -225,6 +230,7 @@ __all__ = [
     "create_semantic_code_search_tool",
     "create_plan_code_change_tool",
     "create_review_changes_tool",
+    "create_autonomous_fix_tool",
     "AgentAnswerVerifier",
     "EvidenceItem",
     "VerificationConfidence",

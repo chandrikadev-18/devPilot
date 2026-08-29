@@ -38,7 +38,10 @@ def _get_embedder() -> CodeEmbedder:
 def _get_vector_store(storage_path: str = DEFAULT_STORAGE_PATH) -> QdrantVectorStore:
     resolved = str(Path(storage_path).resolve())
     if resolved not in _VECTOR_STORE_CACHE:
-        _VECTOR_STORE_CACHE[resolved] = QdrantVectorStore(storage_path=storage_path)
+        try:
+            _VECTOR_STORE_CACHE[resolved] = QdrantVectorStore(storage_path=storage_path)
+        except Exception:
+            _VECTOR_STORE_CACHE[resolved] = QdrantVectorStore(location=":memory:", storage_path=None)
     return _VECTOR_STORE_CACHE[resolved]
 
 

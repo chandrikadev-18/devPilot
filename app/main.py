@@ -1935,6 +1935,48 @@ def run_review(project_dir: str = ".", as_json: bool = False):
         sys.exit(1)
 
 
+def run_fix(
+    request: str,
+    mode: str = "plan",
+    force: bool = False,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """
+    Coordinates the autonomous code fix loop across PLAN, PATCH, and AUTO modes.
+    """
+    from app.changes.autonomous_fix import AutonomousFixService
+    from app.changes.models import FixMode
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        service = AutonomousFixService(project_root=root)
+        fix_mode = FixMode(mode.upper()) if mode else FixMode.PLAN
+        res = service.execute(
+            request=request,
+            mode=fix_mode,
+            force=force,
+        )
+
+        if as_json:
+            print(json.dumps(res.to_dict(), indent=2))
+            return
+
+        print(res.to_formatted_text())
+        if res.status in ("failed", "refused_dirty_tree"):
+            sys.exit(1)
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+            sys.exit(1)
+        print(f"Error executing autonomous fix: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     
@@ -1974,13 +2016,14 @@ def main():
         "apply-change",
         "rollback",
         "review",
+        "fix",
         "-h",
         "--help",
     ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v1.8 - Git-Aware Change Planning & Intelligent Review")
+    parser = argparse.ArgumentParser(description="DevPilot v1.9 - Autonomous Code Fix Loop")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -2213,6 +2256,14 @@ def main():
     plan_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     plan_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # fix subcommand (v1.9 Autonomous Code Fix Loop)
+    fix_parser = subparsers.add_parser("fix", help="Safely analyze, plan, patch, validate, apply, test, review, and rollback autonomous code fixes")
+    fix_parser.add_argument("request", type=str, help="Natural language fix or refactoring request")
+    fix_parser.add_argument("--mode", type=str, choices=["plan", "patch", "auto"], default="plan", help="Fix execution mode: 'plan' (analyze only), 'patch' (generate/validate patch), 'auto' (autonomous apply, test, review, rollback)")
+    fix_parser.add_argument("--force", action="store_true", help="Force execution even if uncommitted changes exist in working tree")
+    fix_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    fix_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -2413,6 +2464,14 @@ def main():
     elif args.command == "plan":
         run_plan_change(
             change_request=args.request,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "fix":
+        run_fix(
+            request=args.request,
+            mode=args.mode,
+            force=args.force,
             project_dir=args.project_dir,
             as_json=args.json,
         )

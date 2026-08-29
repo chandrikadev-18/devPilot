@@ -583,7 +583,25 @@ class CodebaseAgent:
             if state.stopped_reason == "running":
                 state.stopped_reason = "max_iterations_reached"
 
-            if classification.intent == QuestionIntent.REVIEW_CHANGES:
+            if classification.intent == QuestionIntent.AUTONOMOUS_FIX:
+                synthesis_instruction = (
+                    "Please synthesize a clear, structured Autonomous Code Fix report based on the autonomous fix execution findings above. "
+                    "Follow this structure:\n\n"
+                    "## Autonomous Fix Summary\n\n"
+                    "- **Mode:** <PLAN / PATCH / AUTO>\n"
+                    "- **Status:** <SUCCESS / PLAN_ONLY / PATCH_ONLY / FAILED / ROLLED_BACK>\n"
+                    "- **Target:** <Target symbol and location>\n\n"
+                    "### Plan & Impact\n"
+                    "- Direct Dependencies\n"
+                    "- Direct Dependents & Impacted Files\n"
+                    "- Risk Level (<LOW / MEDIUM / HIGH>)\n\n"
+                    "### Verification & Tests\n"
+                    "- Executed test suites and test outcomes\n\n"
+                    "### Status & Rollback\n"
+                    "- Detail whether changes were kept or rolled back.\n\n"
+                    "Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
+            elif classification.intent == QuestionIntent.REVIEW_CHANGES:
                 synthesis_instruction = (
                     "Please synthesize a clear, comprehensive, and structured Git Change Review and Risk Assessment following this structure:\n\n"
                     "## Git Change Review\n\n"
@@ -753,7 +771,14 @@ class CodebaseAgent:
 
         current_intent = getattr(classification, "intent", None)
 
-        # 0. Check for review_changes results (v1.8)
+        # 0. Check for autonomous_fix results (v1.9)
+        if current_intent == QuestionIntent.AUTONOMOUS_FIX:
+            for res in state.tool_results:
+                fmt = res.get("formatted_text")
+                if fmt:
+                    return fmt
+
+        # 0a. Check for review_changes results (v1.8)
         if current_intent == QuestionIntent.REVIEW_CHANGES:
             for res in state.tool_results:
                 fmt = res.get("formatted_text")

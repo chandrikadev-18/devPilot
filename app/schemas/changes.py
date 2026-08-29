@@ -115,3 +115,22 @@ class ReviewChangeResponse(BaseModel):
     review_notes: List[str] = Field(default_factory=list, description="Specific review findings/warnings")
     summary: str = Field(..., description="Narrative review summary")
 
+
+class AutonomousFixRequest(BaseModel):
+    request: str = Field(..., min_length=1, description="Developer fix or refactoring request")
+    mode: str = Field(default="plan", description="Fix execution mode: 'plan', 'patch', or 'auto'")
+    force: bool = Field(default=False, description="Force execution even if working tree is dirty")
+    project_dir: str = Field(default=".", description="Target project directory")
+
+
+class AutonomousFixResponse(BaseModel):
+    mode: str = Field(..., description="Fix mode (PLAN, PATCH, AUTO)")
+    status: str = Field(..., description="Execution status (success, plan_only, patch_only, failed, refused_dirty_tree, rolled_back)")
+    request: str = Field(..., description="Original user fix request")
+    phase: str = Field(..., description="Last executed phase")
+    applied: bool = Field(default=False, description="Whether the patch was applied")
+    errors: List[str] = Field(default_factory=list, description="Errors encountered")
+    warnings: List[str] = Field(default_factory=list, description="Warnings encountered")
+    message: str = Field(default="", description="Summary message")
+    data: Optional[dict] = Field(default=None, description="Raw fix execution payload")
+

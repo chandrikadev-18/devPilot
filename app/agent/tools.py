@@ -1802,5 +1802,97 @@ def create_review_changes_tool(
     }
 
 
+def create_autonomous_fix_tool(
+    project_root: Optional[Path] = None,
+    graph: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Factory for the autonomous_fix tool (v1.9)."""
+
+    def autonomous_fix_tool(
+        request: str,
+        mode: str = "plan",
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Executes the autonomous code fix workflow across PLAN, PATCH, or AUTO modes.
+        """
+        from app.changes.autonomous_fix import AutonomousFixService
+        from app.changes.models import FixMode
+
+        if not request or not request.strip():
+            return {
+                "data": "Change request cannot be empty.",
+                "formatted_text": "Change request cannot be empty.",
+                "sources": [],
+            }
+
+        root = (project_root or Path.cwd()).resolve()
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            service = AutonomousFixService(project_root=root)
+            fix_mode = FixMode(mode.upper()) if mode else FixMode.PLAN
+            result = service.execute(
+                request=request.strip(),
+                mode=fix_mode,
+                force=force,
+                graph=active_graph,
+            )
+        except Exception as e:
+            return {
+                "data": f"Error executing autonomous fix: {str(e)}",
+                "formatted_text": f"Error executing autonomous fix: {str(e)}",
+                "sources": [],
+            }
+
+        sources = []
+        if result.plan:
+            for ev in result.plan.evidence:
+                sources.append({
+                    "source_type": "graph" if "caller" in ev.relationship.lower() or "test" in ev.relationship.lower() else "code",
+                    "symbol_name": ev.symbol,
+                    "file_path": ev.file,
+                    "lines": ev.lines,
+                    "relationship": ev.relationship,
+                })
+        if result.review:
+            for s in result.review.changed_symbols:
+                sources.append({
+                    "source_type": "code",
+                    "symbol_name": s.name,
+                    "file_path": s.file,
+                    "lines": f"{s.line_start}-{s.line_end}" if s.line_start else "1",
+                    "relationship": f"Changed symbol ({s.change_type})",
+                })
+
+        return {
+            "data": result.to_dict(),
+            "formatted_text": result.to_formatted_text(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "autonomous_fix",
+        "description": "Coordinates the autonomous code fix loop across PLAN (analyze/plan), PATCH (plan/generate/validate patch), and AUTO (safe apply, test, review, rollback on failure) modes.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "request": {
+                    "type": "string",
+                    "description": "Natural language fix or refactoring request (e.g. 'Fix the bug in GraphBuilder.build', 'Refactor auth error handling')",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["plan", "patch", "auto"],
+                    "description": "Fix execution mode: 'plan' (analyze only), 'patch' (plan and generate patch), 'auto' (autonomous apply, test, review, rollback)",
+                },
+            },
+            "required": ["request"],
+        },
+        "func": autonomous_fix_tool,
+        "safety_level": "read_only",
+    }
+
+
 
 
