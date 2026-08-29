@@ -34,11 +34,14 @@ from app.changes.reviewer import GitChangeReviewer
 from app.changes.risk import calculate_change_risk, calculate_plan_risk
 from app.changes.rollback import RollbackManager
 from app.changes.service import SafePatchService
+from app.changes.target_resolver import ResolvedTarget, TargetResolver
 from app.changes.test_runner import TestRunner
 
 __all__ = [
     "CodeChangeAnalyzer",
     "ChangeImpactPlanner",
+    "TargetResolver",
+    "ResolvedTarget",
     "CodeChangePatchGenerator",
     "GitChangeReviewer",
     "SafePatchService",

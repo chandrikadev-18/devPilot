@@ -193,6 +193,8 @@ class CodeChangePlan:
     target_symbol: str = ""
     target_file: str = ""
     target_lines: Optional[str] = None
+    resolution_method: Optional[str] = None
+    confidence: Optional[float] = None
     affected_files: List[str] = field(default_factory=list)
     affected_symbols: List[str] = field(default_factory=list)
     relevant_tests: List[str] = field(default_factory=list)
@@ -202,6 +204,10 @@ class CodeChangePlan:
     reason: str = ""
     evidence: List[ChangePlanEvidence] = field(default_factory=list)
     unverified: List[str] = field(default_factory=list)
+
+    @property
+    def target(self) -> str:
+        return self.target_symbol or self.target_file or "Unknown"
 
     def to_formatted_string(self) -> str:
         """Renders the required DevPilot v1.7/v1.8 change plan output format."""
@@ -325,6 +331,8 @@ class CodeChangePlan:
             "target_symbol": self.target_symbol,
             "target_file": self.target_file,
             "target_lines": self.target_lines,
+            "resolution_method": self.resolution_method,
+            "confidence": self.confidence,
             "direct_dependencies": self.direct_dependencies,
             "affected_files": self.affected_files,
             "affected_symbols": self.affected_symbols,

@@ -47,13 +47,32 @@ def _clean_symbol_candidate(raw: str) -> str:
     """Cleans a raw extracted symbol string."""
     cleaned = raw.strip().strip("'\"`?,.:;()[]{}")
     # Strip common leading prefixes
-    for prefix in ("the ", "a ", "function ", "method ", "class ", "module ", "modifying ", "refactoring ", "improving "):
-        if cleaned.lower().startswith(prefix):
-            cleaned = cleaned[len(prefix):].strip()
+    prefixes = (
+        "the ", "a ", "an ", "function ", "method ", "class ", "module ",
+        "modifying ", "refactoring ", "improving ", "changing ", "updating ",
+        "fixing ", "what would be affected if ", "what could be affected if ",
+        "what breaks if ", "what changes if ", "if ",
+    )
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes:
+            if cleaned.lower().startswith(prefix):
+                cleaned = cleaned[len(prefix):].strip()
+                changed = True
     # Strip common trailing suffixes
-    for suffix in (" function", " method", " class", " module", " to improve graph construction", " to improve performance"):
-        if cleaned.lower().endswith(suffix):
-            cleaned = cleaned[:-len(suffix)].strip()
+    suffixes = (
+        " function", " method", " class", " module", " to improve graph construction",
+        " to improve performance", " performance", " speed", " logic", " implementation",
+        " changes", " breaks", " is modified", " is updated", " is changed",
+    )
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if cleaned.lower().endswith(suffix):
+                cleaned = cleaned[:-len(suffix)].strip()
+                changed = True
     return cleaned.strip().strip("'\"`?,.:;()[]{}")
 
 
@@ -136,6 +155,7 @@ def classify_question_intent(question: str) -> IntentClassification:
         r"^how\s+(?:should|can|do)\s+(?:i|we)\s+(?:refactor|change|modify|improve|update)\s+(.+)",
         r"^plan\s+(?:to\s+)?(?:improve|refactor|change|modify|update|optimize)\s+(.+)",
         r"^(?:improve|optimize|refactor)\s+([a-zA-Z0-9_.]+(?:\.[a-zA-Z0-9_]+)?)\s+(?:performance|speed|implementation|logic)",
+        r"^(?:improve|optimize|refactor|modify|update|change)\s+([a-zA-Z0-9_.]+(?:\.[a-zA-Z0-9_]+)?)$",
         r"^what\s+(?:is|would\s+be)\s+the\s+(?:implementation\s+)?plan\s+(?:to|for)\s+(?:change|refactor|improve|modify)\s+(.+)",
         r"^i\s+want\s+to\s+(?:modify|change|refactor|improve|update)\s+(.+)",
     ]
@@ -238,12 +258,12 @@ def classify_question_intent(question: str) -> IntentClassification:
             )
 
     # 1. IMPACT Intent
-    # "What could be affected if X changes?", "What is the impact of changing X?", "What breaks if X changes?"
+    # "What could be affected if X changes?", "What is the impact of changing X?", "What breaks if X changes?", "Explain the impact of X"
     impact_patterns = [
-        r"what\s+(?:could|would|might|can)?\s*be\s+affected\s+if\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?\s+changes",
-        r"what\s+(?:could|would|might|can)?\s*break\s+if\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?\s+changes",
+        r"(?:explain\s+)?what\s+(?:could|would|might|can)?\s*be\s+affected\s+if\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?\s+changes",
+        r"(?:explain\s+)?what\s+(?:could|would|might|can)?\s*break\s+if\s+(?:the\s+)?([a-zA-Z0-9_.]+?)(?:\s+function|\s+method|\s+class)?\s+changes",
+        r"(?:explain\s+)?(?:what\s+is\s+)?(?:the\s+)?impact\s+(?:analysis\s+)?(?:of|for|on)\s+(?:the\s+)?(?:changing\s+|modifying\s+|updating\s+)?([a-zA-Z0-9_.]+)",
         r"what\s+is\s+the\s+impact\s+of\s+(?:changing|modifying|updating)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
-        r"impact\s+(?:analysis\s+)?(?:of|for|on)\s+(?:the\s+)?([a-zA-Z0-9_.]+)",
         r"what\s+(?:is|are)\s+the\s+impacts?\s+of\s+([a-zA-Z0-9_.]+)",
         r"how\s+(?:does|would)\s+changing\s+([a-zA-Z0-9_.]+)\s+affect",
     ]

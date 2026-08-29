@@ -3,7 +3,7 @@ DevPilot Change Impact Planner.
 
 Converts a developer change request into a grounded implementation plan
 using the existing dependency graph, impact analysis, semantic search,
-and evidence verification systems.
+evidence verification, and deterministic target resolution systems.
 """
 
 from pathlib import Path
@@ -12,9 +12,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.changes.models import ChangePlanEvidence, CodeChangePlan
 from app.changes.risk import calculate_plan_risk
+from app.changes.target_resolver import ResolvedTarget, TargetResolver
 from app.graph.models import NodeType
 from app.graph.queries import get_dependents, get_impact
-from app.search.hybrid_search import HybridCodeSearchEngine
 from app.vector_store.qdrant_store import ValidationError
 
 
@@ -25,6 +25,9 @@ def _clean_request_candidate(raw: str) -> str:
         "improve ", "optimize ", "refactor ", "update ", "modify ", "fix ",
         "change ", "rewrite ", "enhance ", "add feature to ", "performance of ",
         "in ", "for ", "the ", "function ", "class ", "method ",
+        "explain what would be affected if ", "explain the impact of ",
+        "what would be affected if ", "what could be affected if ",
+        "what breaks if ", "what changes if ", "explain ",
     ]
     changed = True
     while changed:
@@ -37,6 +40,8 @@ def _clean_request_candidate(raw: str) -> str:
     suffixes = [
         " performance", " speed", " logic", " implementation", " function",
         " method", " class", " module", " behavior", " bug", " feature",
+        " changes", " breaks", " is modified", " is updated", " is changed",
+        " depend on", " depends on",
     ]
     changed = True
     while changed:
@@ -60,10 +65,12 @@ class ChangeImpactPlanner:
         project_root: Optional[Path] = None,
         low_risk_threshold: int = 5,
         medium_risk_threshold: int = 15,
+        target_resolver: Optional[TargetResolver] = None,
     ):
         self.project_root = (project_root or Path.cwd()).resolve()
         self.low_risk_threshold = low_risk_threshold
         self.medium_risk_threshold = medium_risk_threshold
+        self.target_resolver = target_resolver or TargetResolver(project_root=self.project_root)
 
     def plan_change(
         self,
@@ -87,105 +94,41 @@ class ChangeImpactPlanner:
             except Exception:
                 active_graph = None
 
-        # 2. Extract Candidate and Resolve Target Symbol / File
-        target_symbol = ""
-        target_file = ""
-        target_lines: Optional[str] = None
-        unverified: List[str] = []
+        # 2. Resolve Target Symbol / File via 5-Tier TargetResolver
+        resolved_target: ResolvedTarget = self.target_resolver.resolve(
+            request=q_clean,
+            graph=active_graph,
+        )
+
+        target_symbol = resolved_target.target_symbol or resolved_target.target
+        target_file = resolved_target.target_file
+        target_lines = resolved_target.target_lines
+        resolution_method = resolved_target.resolution_method
+        confidence = resolved_target.confidence
+        unverified: List[str] = list(resolved_target.unverified)
         evidence: List[ChangePlanEvidence] = []
 
-        # Check for direct .py file in request
-        file_match = re.search(r"([a-zA-Z0-9_/\\.]+\.py)", q_clean)
-        file_candidate = file_match.group(1).replace("\\", "/") if file_match else None
-
-        # Candidate symbol token
-        candidate_token = _clean_request_candidate(q_clean)
-
-        resolved_node = None
-
-        # Strategy 1: Explicit .py file in change request
-        if file_candidate:
-            target_file = file_candidate
-            if active_graph:
-                norm_fc = file_candidate.lower()
-                for n in active_graph.get_nodes():
-                    if n.file_path and (str(n.file_path).replace("\\", "/").lower() == norm_fc or str(n.file_path).replace("\\", "/").lower().endswith(norm_fc)):
-                        p_cls = n.metadata.get("parent_class")
-                        target_symbol = f"{p_cls}.{n.name}" if p_cls else n.name
-                        resolved_node = n
-                        break
-            if not target_symbol:
-                target_symbol = Path(file_candidate).stem
-
-        # Strategy 2: Look up candidate symbol directly in graph store
-        if not target_file and active_graph and candidate_token:
-            from app.graph.queries import _resolve_target_nodes
-            try:
-                matched_nodes = _resolve_target_nodes(active_graph, candidate_token, allow_multiple=True)
-                if matched_nodes:
-                    resolved_node = matched_nodes[0]
-            except Exception:
-                pass
-
-            if resolved_node is None:
-                named_nodes = active_graph.find_nodes_by_name(candidate_token)
-                if named_nodes:
-                    resolved_node = named_nodes[0]
-
-            if resolved_node is None:
-                cand_lower = candidate_token.lower()
-                for n in active_graph.get_nodes():
-                    n_sym = n.name.lower()
-                    p_cls = (n.metadata.get("parent_class") or "").lower()
-                    if n_sym == cand_lower or (p_cls and f"{p_cls}.{n_sym}" == cand_lower):
-                        resolved_node = n
-                        break
-
-        # Strategy 3: Look up via AST parser if graph didn't find exact node
-        if not target_file and resolved_node is None and candidate_token:
-            try:
-                from app.agent.tools import create_find_symbol_tool
-                find_tool = create_find_symbol_tool(project_root=self.project_root)
-                find_res = find_tool["func"](candidate_token)
-                data = find_res.get("data", [])
-                if isinstance(data, list) and data:
-                    match = data[0]
-                    target_file = str(match.get("file_path", "")).replace("\\", "/")
-                    p_sym = match.get("parent_symbol")
-                    s_name = match.get("symbol_name", candidate_token)
-                    target_symbol = f"{p_sym}.{s_name}" if p_sym else s_name
-                    s_line = match.get("start_line", 1)
-                    e_line = match.get("end_line", s_line)
-                    target_lines = f"{s_line}-{e_line}"
-            except Exception:
-                pass
-
-        if resolved_node is not None and not target_file:
-            p_cls = resolved_node.metadata.get("parent_class")
-            target_symbol = f"{p_cls}.{resolved_node.name}" if p_cls else resolved_node.name
-            target_file = str(resolved_node.file_path).replace("\\", "/")
-            if resolved_node.start_line and resolved_node.end_line:
-                target_lines = f"{resolved_node.start_line}-{resolved_node.end_line}"
-            elif resolved_node.start_line:
-                target_lines = str(resolved_node.start_line)
-
-        # Strategy 4: If target is still unresolved, try semantic search fallback
-        if not target_symbol and not target_file:
-            try:
-                engine = HybridCodeSearchEngine(project_root=self.project_root, graph=active_graph)
-                sem_res = engine.search(query=q_clean, top_k=3)
-                if sem_res.results and sem_res.results[0].score >= 0.70:
-                    first = sem_res.results[0]
-                    target_symbol = first.symbol
-                    target_file = str(first.file).replace("\\", "/")
-                    target_lines = f"{first.start_line}-{first.end_line}"
-            except Exception:
-                pass
-
-        # Check if target resolution succeeded
-        if not target_file and not resolved_node:
-            target_symbol = candidate_token or q_clean
-            unverified.append("Target symbol or file could not be verified in the codebase")
+        # Handle Ambiguous Target (Safety Requirement: Do not generate potentially unsafe plan)
+        if resolved_target.is_ambiguous:
+            return CodeChangePlan(
+                change_request=change_request,
+                target_symbol=target_symbol,
+                target_file="",
+                target_lines=None,
+                resolution_method=resolution_method,
+                confidence=confidence,
+                direct_dependencies=[],
+                affected_files=[],
+                affected_symbols=[],
+                relevant_tests=[],
+                recommended_order=[
+                    f"Disambiguate target symbol '{target_symbol}' by providing full qualification (e.g. Class.method) or file path before proceeding."
+                ],
+                risk="HIGH",
+                reason=f"Target symbol '{target_symbol}' is ambiguous and matches multiple distinct definitions across the repository. Explicit qualification is required.",
+                evidence=[],
+                unverified=unverified,
+            )
 
         # 3. Add target evidence if verified
         if target_file:
@@ -365,6 +308,8 @@ class ChangeImpactPlanner:
             target_symbol=target_symbol,
             target_file=target_file,
             target_lines=target_lines,
+            resolution_method=resolution_method,
+            confidence=confidence,
             direct_dependencies=sorted(list(set(direct_dependencies_list))),
             affected_files=affected_files_list,
             affected_symbols=affected_symbols_list,
@@ -375,4 +320,3 @@ class ChangeImpactPlanner:
             evidence=evidence,
             unverified=unverified,
         )
-

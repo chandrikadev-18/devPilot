@@ -63,6 +63,8 @@ class PlanChangeResponse(BaseModel):
     target_symbol: Optional[str] = Field(None, description="Resolved target symbol name")
     target_file: Optional[str] = Field(None, description="Resolved target file path")
     target_lines: Optional[str] = Field(None, description="Target line span")
+    resolution_method: Optional[str] = Field(None, description="Target resolution method (exact_qualified, symbol_with_context, exact_unqualified, semantic_search, ambiguous, unresolved)")
+    confidence: Optional[float] = Field(None, description="Confidence score of target resolution (0.0 to 1.0)")
     direct_dependencies: List[str] = Field(default_factory=list, description="Direct callees/dependencies")
     affected_files: List[str] = Field(default_factory=list, description="All impacted file paths")
     affected_symbols: List[str] = Field(default_factory=list, description="All impacted symbol names")
