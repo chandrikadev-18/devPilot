@@ -14,15 +14,19 @@ from typing import List, Optional
 from app.changes.models import TestValidationResult
 
 
+from app.config import get_test_timeout
+
+
 class TestRunner:
     """
     Executes repository test suites safely and collects structured test results.
     """
     __test__ = False
 
-    def __init__(self, project_root: Optional[Path] = None, timeout_seconds: int = 180):
+    def __init__(self, project_root: Optional[Path] = None, timeout_seconds: Optional[int] = None):
         self.project_root = (project_root or Path.cwd()).resolve()
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = int(get_test_timeout()) if timeout_seconds is None else timeout_seconds
+
 
     def run_tests(self, test_targets: Optional[List[str]] = None) -> TestValidationResult:
         """

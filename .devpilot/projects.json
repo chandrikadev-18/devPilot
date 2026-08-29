@@ -339,5 +339,159 @@
     "created_at": "2026-08-29T17:12:41.004581+00:00",
     "updated_at": "2026-08-29T17:12:41.014690+00:00",
     "metadata": {}
+  },
+  "proj_format_test_f73888": {
+    "project_id": "proj_format_test_f73888",
+    "name": "Format Test",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-170/test_18_api_response_format0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:19:10.140779+00:00",
+    "updated_at": "2026-08-29T17:19:10.140779+00:00",
+    "metadata": {}
+  },
+  "proj_format_test_c3f1d5": {
+    "project_id": "proj_format_test_c3f1d5",
+    "name": "Format Test",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-171/test_18_api_response_format0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:19:49.877877+00:00",
+    "updated_at": "2026-08-29T17:19:49.877877+00:00",
+    "metadata": {}
+  },
+  "proj_format_test_7ed606": {
+    "project_id": "proj_format_test_7ed606",
+    "name": "Format Test",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_18_api_response_format0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:22:42.325932+00:00",
+    "updated_at": "2026-08-29T17:22:42.325932+00:00",
+    "metadata": {}
+  },
+  "proj_api_test_project_d45c4a": {
+    "project_id": "proj_api_test_project_d45c4a",
+    "name": "API Test Project",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_api_create_and_get_projec0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:22:46.572308+00:00",
+    "updated_at": "2026-08-29T17:22:46.572308+00:00",
+    "metadata": {}
+  },
+  "proj_project_1_68ee36": {
+    "project_id": "proj_project_1_68ee36",
+    "name": "Project 1",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_api_create_project_duplic0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:22:47.055277+00:00",
+    "updated_at": "2026-08-29T17:22:47.055277+00:00",
+    "metadata": {}
+  },
+  "proj_scan_graph_target_789a4f": {
+    "project_id": "proj_scan_graph_target_789a4f",
+    "name": "Scan Graph Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_api_project_scan_and_grap0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:22:47.540268+00:00",
+    "updated_at": "2026-08-29T17:22:47.540268+00:00",
+    "metadata": {}
+  },
+  "proj_review_target_a30245": {
+    "project_id": "proj_review_target_a30245",
+    "name": "Review Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_api_project_review0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:22:48.064462+00:00",
+    "updated_at": "2026-08-29T17:22:48.064462+00:00",
+    "metadata": {}
+  },
+  "proj_delete_target_03a0ef": {
+    "project_id": "proj_delete_target_03a0ef",
+    "name": "Delete Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_api_delete_project0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ARCHIVED",
+    "created_at": "2026-08-29T17:22:48.819522+00:00",
+    "updated_at": "2026-08-29T17:22:48.835519+00:00",
+    "metadata": {}
+  },
+  "proj_format_test_173ad0": {
+    "project_id": "proj_format_test_173ad0",
+    "name": "Format Test",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_18_api_response_format0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:27:33.620485+00:00",
+    "updated_at": "2026-08-29T17:27:33.620485+00:00",
+    "metadata": {}
+  },
+  "proj_api_test_project_ba6b28": {
+    "project_id": "proj_api_test_project_ba6b28",
+    "name": "API Test Project",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_api_create_and_get_projec0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:27:37.073485+00:00",
+    "updated_at": "2026-08-29T17:27:37.073485+00:00",
+    "metadata": {}
+  },
+  "proj_project_1_7fdf1e": {
+    "project_id": "proj_project_1_7fdf1e",
+    "name": "Project 1",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_api_create_project_duplic0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:27:37.458335+00:00",
+    "updated_at": "2026-08-29T17:27:37.458335+00:00",
+    "metadata": {}
+  },
+  "proj_scan_graph_target_6445d2": {
+    "project_id": "proj_scan_graph_target_6445d2",
+    "name": "Scan Graph Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_api_project_scan_and_grap0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:27:37.841015+00:00",
+    "updated_at": "2026-08-29T17:27:37.841015+00:00",
+    "metadata": {}
+  },
+  "proj_review_target_769e49": {
+    "project_id": "proj_review_target_769e49",
+    "name": "Review Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_api_project_review0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-08-29T17:27:38.235741+00:00",
+    "updated_at": "2026-08-29T17:27:38.235741+00:00",
+    "metadata": {}
+  },
+  "proj_delete_target_2842c0": {
+    "project_id": "proj_delete_target_2842c0",
+    "name": "Delete Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_api_delete_project0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ARCHIVED",
+    "created_at": "2026-08-29T17:27:38.842098+00:00",
+    "updated_at": "2026-08-29T17:27:38.855221+00:00",
+    "metadata": {}
   }
 }

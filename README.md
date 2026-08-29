@@ -443,30 +443,87 @@ python -m app.main agent "What are the dependencies of auth.py?" --debug
 python -m app.main agent "Show callers of hash_password" --json
 ```
 
+### 11. Project Management & Operations (v2.5)
+Manage codebases, view metadata, and trigger project-scoped operations via CLI or REST API:
+
+```bash
+# List all registered projects
+python -m app.main project list
+
+# Register a codebase
+python -m app.main project add /path/to/repo --name "My Repo"
+
+# View project info and metrics
+python -m app.main project info <project_id>
+
+# Run project scan, graph build, and code review
+python -m app.main project scan <project_id>
+python -m app.main project graph <project_id>
+python -m app.main project review <project_id>
+```
+
+### 12. Health Checks & Observability (v2.6)
+Inspect service availability and subsystem diagnostics:
+
+```bash
+# Simple health check
+curl http://127.0.0.1:8000/health
+
+# Detailed diagnostics (Git, Storage, Graph, LLM status)
+curl http://127.0.0.1:8000/health/details
+```
+
+---
+
+## Configuration & Environment Variables (v2.6)
+
+DevPilot is configured via environment variables or a `.env` file in the project root:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `DEVPILOT_ENV` | `development` | Environment name (`development`, `production`, `test`) |
+| `LOG_LEVEL` | `INFO` | Structured logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `DEVPILOT_API_HOST` | `127.0.0.1` | REST API host address |
+| `DEVPILOT_API_PORT` | `8000` | REST API port number |
+| `OPERATION_TIMEOUT` | `60.0` | Maximum duration in seconds for project-scoped operations |
+| `TEST_TIMEOUT` | `30.0` | Maximum duration in seconds for test runner execution |
+| `MAX_PROJECT_SIZE_MB` | `500.0` | Maximum project size limit |
+| `LLM_PROVIDER` | `groq` | Supported LLM provider (`groq`) |
+| `LLM_MODEL` | `openai/gpt-oss-120b` | Model identifier |
+| `LLM_API_KEY` | *(unset)* | API key for LLM provider (redacted automatically in logs) |
+
+---
+
+## Structured Logging & Secret Redaction (v2.6)
+
+DevPilot features production-ready structured JSON logging:
+- Automatic redaction of sensitive credentials (`gsk_...`, `Bearer ...`, API keys, passwords).
+- Contextual tracking (`timestamp`, `module`, `operation`, `project_id`, `operation_id`, `duration_ms`, `status`).
+
 ---
 
 ## Running Tests
 
-Run all unit and mock integration tests using `pytest` without requiring an API key or internet access:
+Run all unit, integration, and regression tests using `pytest` without external dependencies:
 
 ```bash
-python -m pytest tests/
+pytest -q
 ```
 
 ---
 
 ## Scope & Roadmap
 
-| Feature Area | Status in v1.0 | Roadmap |
+| Feature Area | Status | Roadmap |
 | :--- | :--- | :--- |
-| **Project Scanner & Tree-sitter Parser** | Completed (v0.1 - v0.2) | Maintained |
+| **Project Scanner & AST Parser** | Completed (v0.1 - v0.2) | Maintained |
 | **Code Chunking & Local Embeddings** | Completed (v0.3 - v0.4) | Maintained |
 | **Qdrant Vector Store & Semantic Search** | Completed (v0.5 - v0.6) | Maintained |
 | **RAG & Single-Turn Codebase Q&A** | Completed (v0.7) | Maintained |
 | **Read-Only Tool-Using AI Agent** | Completed (v0.8) | Maintained |
 | **Read-Only Git Intelligence & History** | Completed (v0.9) | Maintained |
-| **Code Dependency & Relationship Graph** | **Completed (v1.0)** | Maintained |
-| **External Graph DB (Neo4j)** | Out of Scope for v1.0 | Future version |
-| **Code Modification & File Editing** | Out of Scope | Future version |
-| **Code Execution & Shell Commands** | Out of Scope | Strictly Forbidden |
-| **Multi-Agent Systems** | Out of Scope | Future version |
+| **Code Dependency Graph & Impact Analysis** | Completed (v1.0 - v1.3) | Maintained |
+| **Autonomous Change Planning & Patch Loop** | Completed (v2.0 - v2.4) | Maintained |
+| **Project Management & Operation Tracking** | **Completed (v2.5)** | Maintained |
+| **Production Hardening, Health & Observability** | **Completed (v2.6)** | Maintained |
+

@@ -988,5 +988,377 @@
       "summary": "Working tree is clean. No local modifications to review."
     },
     "error": null
+  },
+  "op_scan_20260829_172247_5973a5": {
+    "operation_id": "op_scan_20260829_172247_5973a5",
+    "project_id": "proj_scan_graph_target_789a4f",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:22:47.553073+00:00",
+    "completed_at": "2026-08-29T17:22:47.561073+00:00",
+    "result": {
+      "project_name": "Scan Graph Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_api_project_scan_and_grap0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 2.13
+    },
+    "error": null
+  },
+  "op_graph_build_20260829_172247_1ace21": {
+    "operation_id": "op_graph_build_20260829_172247_1ace21",
+    "project_id": "proj_scan_graph_target_789a4f",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:22:47.574071+00:00",
+    "completed_at": "2026-08-29T17:22:47.587804+00:00",
+    "result": {
+      "project_id": "proj_scan_graph_target_789a4f",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 7.71
+    },
+    "error": null
+  },
+  "op_review_20260829_172248_579f67": {
+    "operation_id": "op_review_20260829_172248_579f67",
+    "project_id": "proj_review_target_a30245",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:22:48.077797+00:00",
+    "completed_at": "2026-08-29T17:22:48.390499+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 306.95
+    },
+    "error": null
+  },
+  "op_scan_20260829_172249_68d4e7": {
+    "operation_id": "op_scan_20260829_172249_68d4e7",
+    "project_id": "proj_cli_test_project_536dcc",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:22:49.275970+00:00",
+    "completed_at": "2026-08-29T17:22:49.280984+00:00",
+    "result": {
+      "project_name": "CLI Test Project",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-172/test_cli_project_add_and_info0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 1.15
+    },
+    "error": null
+  },
+  "op_graph_build_20260829_172249_f9db3f": {
+    "operation_id": "op_graph_build_20260829_172249_f9db3f",
+    "project_id": "proj_cli_test_project_536dcc",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:22:49.287821+00:00",
+    "completed_at": "2026-08-29T17:22:49.297830+00:00",
+    "result": {
+      "project_id": "proj_cli_test_project_536dcc",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 6.77
+    },
+    "error": null
+  },
+  "op_review_20260829_172249_54e7c0": {
+    "operation_id": "op_review_20260829_172249_54e7c0",
+    "project_id": "proj_cli_test_project_536dcc",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:22:49.303830+00:00",
+    "completed_at": "2026-08-29T17:22:49.607210+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 299.78
+    },
+    "error": null
+  },
+  "op_scan_20260829_172737_9e5db5": {
+    "operation_id": "op_scan_20260829_172737_9e5db5",
+    "project_id": "proj_scan_graph_target_6445d2",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:27:37.850344+00:00",
+    "completed_at": "2026-08-29T17:27:37.855322+00:00",
+    "result": {
+      "project_name": "Scan Graph Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_api_project_scan_and_grap0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 1.07
+    },
+    "error": null
+  },
+  "op_graph_build_20260829_172737_d5b313": {
+    "operation_id": "op_graph_build_20260829_172737_d5b313",
+    "project_id": "proj_scan_graph_target_6445d2",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:27:37.865325+00:00",
+    "completed_at": "2026-08-29T17:27:37.874830+00:00",
+    "result": {
+      "project_id": "proj_scan_graph_target_6445d2",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 5.55
+    },
+    "error": null
+  },
+  "op_review_20260829_172738_aa3552": {
+    "operation_id": "op_review_20260829_172738_aa3552",
+    "project_id": "proj_review_target_769e49",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:27:38.244846+00:00",
+    "completed_at": "2026-08-29T17:27:38.478605+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 229.34
+    },
+    "error": null
+  },
+  "op_scan_20260829_172739_cb04c5": {
+    "operation_id": "op_scan_20260829_172739_cb04c5",
+    "project_id": "proj_cli_test_project_ed0ae5",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:27:39.311329+00:00",
+    "completed_at": "2026-08-29T17:27:39.315230+00:00",
+    "result": {
+      "project_name": "CLI Test Project",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-173/test_cli_project_add_and_info0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 1.08
+    },
+    "error": null
+  },
+  "op_graph_build_20260829_172739_d69385": {
+    "operation_id": "op_graph_build_20260829_172739_d69385",
+    "project_id": "proj_cli_test_project_ed0ae5",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:27:39.320230+00:00",
+    "completed_at": "2026-08-29T17:27:39.329235+00:00",
+    "result": {
+      "project_id": "proj_cli_test_project_ed0ae5",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 5.28
+    },
+    "error": null
+  },
+  "op_review_20260829_172739_692795": {
+    "operation_id": "op_review_20260829_172739_692795",
+    "project_id": "proj_cli_test_project_ed0ae5",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-08-29T17:27:39.334233+00:00",
+    "completed_at": "2026-08-29T17:27:39.572671+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 235.11
+    },
+    "error": null
   }
 }

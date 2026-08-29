@@ -80,11 +80,20 @@ from app.graph import (
     load_graph,
     save_graph,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.api import api_router
 from app.api.changes import router as changes_router
+from app.api.health import router as health_router
 from app.api.projects import router as projects_router
+from app.logger import logger
+from app.projects.service import (
+    DuplicateProjectError,
+    InvalidProjectPathError,
+    OperationNotFoundError,
+    ProjectNotFoundError,
+)
 
 app = FastAPI(
     title="DevPilot API",
@@ -103,9 +112,102 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(health_router)
 app.include_router(api_router)
 app.include_router(projects_router)
 app.include_router(changes_router)
+
+
+# Global Exception Handlers for consistent API error responses (v2.6)
+@app.exception_handler(ProjectNotFoundError)
+def project_not_found_handler(request: Request, exc: ProjectNotFoundError):
+    logger.warning(f"Project not found: {exc}", extra={"path": str(request.url)})
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "status": "error",
+            "error": {"code": "PROJECT_NOT_FOUND", "message": str(exc)},
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(DuplicateProjectError)
+def duplicate_project_handler(request: Request, exc: DuplicateProjectError):
+    logger.warning(f"Duplicate project registration: {exc}", extra={"path": str(request.url)})
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "status": "error",
+            "error": {"code": "DUPLICATE_PROJECT", "message": str(exc)},
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(InvalidProjectPathError)
+def invalid_project_path_handler(request: Request, exc: InvalidProjectPathError):
+    logger.warning(f"Invalid project path: {exc}", extra={"path": str(request.url)})
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "status": "error",
+            "error": {"code": "INVALID_PROJECT_PATH", "message": str(exc)},
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(OperationNotFoundError)
+def operation_not_found_handler(request: Request, exc: OperationNotFoundError):
+    logger.warning(f"Operation not found: {exc}", extra={"path": str(request.url)})
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "status": "error",
+            "error": {"code": "OPERATION_NOT_FOUND", "message": str(exc)},
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(status.HTTP_404_NOT_FOUND)
+@app.exception_handler(status.HTTP_400_BAD_REQUEST)
+@app.exception_handler(status.HTTP_409_CONFLICT)
+@app.exception_handler(Exception)
+def generic_exception_handler(request: Request, exc: Exception):
+    status_code = getattr(exc, "status_code", 500)
+    detail = getattr(exc, "detail", str(exc))
+    
+    code = "INTERNAL_SERVER_ERROR" if status_code == 500 else "ERROR"
+    if status_code == 404:
+        code = "NOT_FOUND"
+        if "project" in str(detail).lower():
+            code = "PROJECT_NOT_FOUND"
+        elif "operation" in str(detail).lower():
+            code = "OPERATION_NOT_FOUND"
+    elif status_code == 400:
+        code = "BAD_REQUEST"
+        if "path" in str(detail).lower():
+            code = "INVALID_PROJECT_PATH"
+    elif status_code == 409:
+        code = "DUPLICATE_PROJECT" if "project" in str(detail).lower() else "CONFLICT"
+
+    if status_code >= 500:
+        logger.error(f"Internal server error: {exc}", extra={"path": str(request.url)}, exc_info=True)
+    else:
+        logger.warning(f"Client error ({status_code}): {detail}", extra={"path": str(request.url)})
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "error",
+            "error": {"code": code, "message": str(detail)},
+            "detail": detail,
+        },
+    )
+
+
 
 
 

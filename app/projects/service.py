@@ -5,17 +5,25 @@ Orchestrates project registration, safe path validation, Git repository detectio
 and project-scoped operation executions (scan, graph, review, agent).
 """
 
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.agent import create_codebase_agent
 from app.changes.reviewer import GitChangeReviewer
+from app.config import get_project_storage_location
 from app.embeddings.embedder import CodeEmbedder
 from app.git.repository import is_git_repository
 from app.graph.builder import GraphBuilder
 from app.graph.models import NodeType
 from app.llm import create_llm_provider, strip_thinking_and_tool_tags
+from app.logger import (
+    log_operation_complete,
+    log_operation_error,
+    log_operation_start,
+    logger,
+)
 from app.projects.models import (
     Operation,
     OperationStatus,
@@ -72,7 +80,10 @@ class ProjectService:
         operation_store: Optional[OperationStore] = None,
     ):
         self.project_root = (project_root or Path.cwd()).resolve()
-        self.project_store = project_store or ProjectStore(project_root=self.project_root)
+        custom_storage = get_project_storage_location()
+        storage_path = Path(custom_storage).resolve() if custom_storage else None
+
+        self.project_store = project_store or ProjectStore(project_root=self.project_root, storage_path=storage_path)
         self.operation_store = operation_store or OperationStore(project_root=self.project_root)
 
     def validate_path(self, raw_path: str) -> Path:
@@ -197,18 +208,22 @@ class ProjectService:
         if not root.exists():
             raise InvalidProjectPathError(f"Project path '{proj.path}' no longer exists on disk.")
 
+        op_id = generate_operation_id(OperationType.SCAN.value)
         op = Operation(
-            operation_id=generate_operation_id(OperationType.SCAN.value),
+            operation_id=op_id,
             project_id=project_id,
             operation_type=OperationType.SCAN.value,
             status=OperationStatus.RUNNING.value,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
         self.operation_store.save(op)
+        log_operation_start("scan", project_id=project_id, operation_id=op_id)
+        start_time = time.perf_counter()
 
         try:
             scanner = ProjectScanner()
             files, stats = scanner.scan(root)
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
             result = {
                 "project_name": proj.name,
                 "project_path": proj.path,
@@ -216,17 +231,21 @@ class ProjectService:
                 "total_dirs": stats.total_dirs,
                 "extensions": stats.extensions,
                 "files_count": len(files),
+                "duration_ms": round(duration_ms, 2),
             }
             op.status = OperationStatus.COMPLETED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.result = result
             self.operation_store.save(op)
+            log_operation_complete("scan", duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             return op, result
         except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
             op.status = OperationStatus.FAILED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.error = str(e)
             self.operation_store.save(op)
+            log_operation_error("scan", error=e, duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             raise
 
     def build_graph(self, project_id: str) -> Tuple[Operation, Dict[str, Any]]:
@@ -236,20 +255,24 @@ class ProjectService:
         if not root.exists():
             raise InvalidProjectPathError(f"Project path '{proj.path}' no longer exists on disk.")
 
+        op_id = generate_operation_id(OperationType.GRAPH_BUILD.value)
         op = Operation(
-            operation_id=generate_operation_id(OperationType.GRAPH_BUILD.value),
+            operation_id=op_id,
             project_id=project_id,
             operation_type=OperationType.GRAPH_BUILD.value,
             status=OperationStatus.RUNNING.value,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
         self.operation_store.save(op)
+        log_operation_start("graph_build", project_id=project_id, operation_id=op_id)
+        start_time = time.perf_counter()
 
         try:
             builder = GraphBuilder()
             store = builder.build(root)
             nodes = store.get_nodes()
             edges = store.get_edges()
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
 
             result = {
                 "project_id": project_id,
@@ -258,17 +281,21 @@ class ProjectService:
                 "files": len([n for n in nodes if n.node_type == NodeType.FILE]),
                 "classes": len([n for n in nodes if n.node_type == NodeType.CLASS]),
                 "functions": len([n for n in nodes if n.node_type == NodeType.FUNCTION]),
+                "duration_ms": round(duration_ms, 2),
             }
             op.status = OperationStatus.COMPLETED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.result = result
             self.operation_store.save(op)
+            log_operation_complete("graph_build", duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             return op, result
         except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
             op.status = OperationStatus.FAILED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.error = str(e)
             self.operation_store.save(op)
+            log_operation_error("graph_build", error=e, duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             raise
 
     def review_project(self, project_id: str) -> Tuple[Operation, Dict[str, Any]]:
@@ -278,30 +305,38 @@ class ProjectService:
         if not root.exists():
             raise InvalidProjectPathError(f"Project path '{proj.path}' no longer exists on disk.")
 
+        op_id = generate_operation_id(OperationType.REVIEW.value)
         op = Operation(
-            operation_id=generate_operation_id(OperationType.REVIEW.value),
+            operation_id=op_id,
             project_id=project_id,
             operation_type=OperationType.REVIEW.value,
             status=OperationStatus.RUNNING.value,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
         self.operation_store.save(op)
+        log_operation_start("review", project_id=project_id, operation_id=op_id)
+        start_time = time.perf_counter()
 
         try:
             reviewer = GitChangeReviewer(project_root=root)
             review = reviewer.review_working_tree()
             result = review.to_dict()
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            result["duration_ms"] = round(duration_ms, 2)
 
             op.status = OperationStatus.COMPLETED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.result = result
             self.operation_store.save(op)
+            log_operation_complete("review", duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             return op, result
         except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
             op.status = OperationStatus.FAILED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.error = str(e)
             self.operation_store.save(op)
+            log_operation_error("review", error=e, duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             raise
 
     def ask_agent(
@@ -320,14 +355,17 @@ class ProjectService:
         if not question or not question.strip():
             raise ProjectError("Agent question cannot be empty.")
 
+        op_id = generate_operation_id(OperationType.AGENT.value)
         op = Operation(
-            operation_id=generate_operation_id(OperationType.AGENT.value),
+            operation_id=op_id,
             project_id=project_id,
             operation_type=OperationType.AGENT.value,
             status=OperationStatus.RUNNING.value,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
         self.operation_store.save(op)
+        log_operation_start("agent", project_id=project_id, operation_id=op_id)
+        start_time = time.perf_counter()
 
         try:
             embedder = CodeEmbedder()
@@ -357,6 +395,7 @@ class ProjectService:
 
             agent_result = agent.run(question=question.strip())
             clean_answer = strip_thinking_and_tool_tags(agent_result.answer)
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
 
             result = {
                 "project_id": project_id,
@@ -364,18 +403,22 @@ class ProjectService:
                 "answer": clean_answer,
                 "tool_calls": [tc.to_dict() if hasattr(tc, "to_dict") else str(tc) for tc in agent_result.tool_calls],
                 "iterations": agent_result.iterations,
+                "duration_ms": round(duration_ms, 2),
             }
 
             op.status = OperationStatus.COMPLETED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.result = result
             self.operation_store.save(op)
+            log_operation_complete("agent", duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             return op, result
         except Exception as e:
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
             op.status = OperationStatus.FAILED.value
             op.completed_at = datetime.now(timezone.utc).isoformat()
             op.error = str(e)
             self.operation_store.save(op)
+            log_operation_error("agent", error=e, duration_ms=duration_ms, project_id=project_id, operation_id=op_id)
             raise
 
     def get_operation(self, operation_id: str) -> Operation:
