@@ -1733,5 +1733,74 @@ def create_plan_code_change_tool(
     }
 
 
+def create_review_changes_tool(
+    project_root: Optional[Path] = None,
+    graph: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Factory for the review_changes tool (v1.8)."""
+
+    def review_changes_tool(project_dir: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Inspects the current Git working tree status, uncommitted diffs, changed symbols,
+        dependency impact, risk, and recommended tests.
+        """
+        from app.changes.reviewer import GitChangeReviewer
+        from app.git.repository import NotAGitRepositoryError
+
+        root = (Path(project_dir) if project_dir else (project_root or Path.cwd())).resolve()
+
+        try:
+            active_graph = _resolve_graph(graph, root)
+            reviewer = GitChangeReviewer(project_root=root)
+            review = reviewer.review_working_tree(graph=active_graph)
+        except NotAGitRepositoryError as e:
+            return {
+                "data": str(e),
+                "formatted_text": str(e),
+                "sources": [],
+            }
+        except Exception as e:
+            return {
+                "data": f"Error reviewing code changes: {str(e)}",
+                "formatted_text": f"Error reviewing code changes: {str(e)}",
+                "sources": [],
+            }
+
+        sources = []
+        for s in review.changed_symbols:
+            sources.append({
+                "source_type": "code",
+                "symbol_name": s.name,
+                "file_path": s.file,
+                "lines": f"{s.line_start}-{s.line_end}" if s.line_start else "1",
+                "relationship": f"Changed symbol ({s.change_type})",
+            })
+        for rec in review.test_recommendations:
+            sources.append({
+                "source_type": "test",
+                "symbol_name": rec.symbol_name or rec.test_target,
+                "file_path": rec.file_path,
+                "lines": "1",
+                "relationship": rec.reason,
+            })
+
+        return {
+            "data": review.to_dict(),
+            "formatted_text": review.to_formatted_text(),
+            "sources": sources,
+        }
+
+    return {
+        "name": "review_changes",
+        "description": "Performs an intelligent review of current Git working tree changes: inspects git status and diff, extracts modified AST symbols, calculates blast radius impact, evaluates risk (LOW/MEDIUM/HIGH), and recommends test suites.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+        "func": review_changes_tool,
+        "safety_level": "read_only",
+    }
+
+
 
 

@@ -583,7 +583,44 @@ class CodebaseAgent:
             if state.stopped_reason == "running":
                 state.stopped_reason = "max_iterations_reached"
 
-            if classification.intent == QuestionIntent.IMPACT:
+            if classification.intent == QuestionIntent.REVIEW_CHANGES:
+                synthesis_instruction = (
+                    "Please synthesize a clear, comprehensive, and structured Git Change Review and Risk Assessment following this structure:\n\n"
+                    "## Git Change Review\n\n"
+                    "### What Changed\n"
+                    "- List modified, added, or deleted files and altered symbols with file locations.\n\n"
+                    "### Blast Radius & Impact\n"
+                    "- List direct calling components and indirect ripple effects across the project.\n\n"
+                    "### Risk Assessment\n"
+                    "- **Risk Level:** <LOW / MEDIUM / HIGH / CRITICAL>\n"
+                    "- Reasons contributing to this risk level.\n\n"
+                    "### Recommended Tests\n"
+                    "- List specific test suites and test functions that should be executed.\n\n"
+                    "### Assessment & Next Steps\n"
+                    "- Summarize architectural importance, risky or suspicious changes if any, and testing advice.\n\n"
+                    "Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
+            elif classification.intent == QuestionIntent.CHANGE_PLAN:
+                synthesis_instruction = (
+                    "Please synthesize a clear, structured Change Plan based on the change planning findings above. "
+                    "Follow this structure:\n\n"
+                    "## Change Plan\n\n"
+                    f"### Target\n`{classification.target_symbol or resolved_symbol_context.get('canonical_name') or 'Target'}`\n\n"
+                    f"### Current Location\n`{resolved_symbol_context.get('file_path') or 'Target File'}:{resolved_symbol_context.get('start_line', 1)}-{resolved_symbol_context.get('end_line', '')}`\n\n"
+                    "### Direct Dependencies\n- List key dependencies/callees\n\n"
+                    "### Direct Dependents\n- List key callers/dependents\n\n"
+                    "### Indirect Impact\n- List impacted files and modules\n\n"
+                    "### Relevant Tests\n- List recommended test suites\n\n"
+                    "### Risk\n**<LOW / MEDIUM / HIGH>**\n\n"
+                    "### Recommended Change Sequence\n"
+                    "1. Core logic changes in target\n"
+                    "2. Verify direct dependencies\n"
+                    "3. Update direct dependents\n"
+                    "4. Run relevant tests\n"
+                    "5. Review diff\n\n"
+                    "Do not output <think> tags, internal reasoning, or raw tool syntax."
+                )
+            elif classification.intent == QuestionIntent.IMPACT:
                 synthesis_instruction = (
                     "Please synthesize a clear, concise Impact Analysis. Follow this structure:\n\n"
                     "## Impact Analysis\n\n"
@@ -670,7 +707,7 @@ class CodebaseAgent:
                 }
             ]
             try:
-                final_res = self.llm.chat(messages=synthesis_messages, tools=tool_specs if tool_specs else None)
+                final_res = self.llm.chat(messages=synthesis_messages, tools=None)
                 synthesis_text = strip_thinking_and_tool_tags(final_res.content or "")
                 if synthesis_text and synthesis_text.strip():
                     state.final_answer = synthesis_text
@@ -716,7 +753,14 @@ class CodebaseAgent:
 
         current_intent = getattr(classification, "intent", None)
 
-        # 0. Check for plan_code_change results (v1.7)
+        # 0. Check for review_changes results (v1.8)
+        if current_intent == QuestionIntent.REVIEW_CHANGES:
+            for res in state.tool_results:
+                fmt = res.get("formatted_text")
+                if fmt:
+                    return fmt
+
+        # 0a. Check for plan_code_change results (v1.7/v1.8)
         if current_intent == QuestionIntent.CHANGE_PLAN:
             for res in state.tool_results:
                 fmt = res.get("formatted_text")

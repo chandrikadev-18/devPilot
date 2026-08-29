@@ -348,11 +348,24 @@ class ChangeImpactPlanner:
         else:
             recommended_order.append("Add unit tests covering the modified functionality")
 
+        # Extract direct dependencies (callees) of target
+        direct_dependencies_list: List[str] = []
+        if active_graph and target_symbol:
+            try:
+                from app.graph.queries import get_dependencies
+                dep_res = get_dependencies(active_graph, symbol=target_symbol, max_depth=1)
+                if dep_res and hasattr(dep_res, "dependencies"):
+                    for d in dep_res.dependencies:
+                        direct_dependencies_list.append(d.name)
+            except Exception:
+                pass
+
         return CodeChangePlan(
             change_request=change_request,
             target_symbol=target_symbol,
             target_file=target_file,
             target_lines=target_lines,
+            direct_dependencies=sorted(list(set(direct_dependencies_list))),
             affected_files=affected_files_list,
             affected_symbols=affected_symbols_list,
             relevant_tests=relevant_tests_list,

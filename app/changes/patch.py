@@ -162,7 +162,7 @@ class CodeChangePatchGenerator:
                 )
             )
 
-        return CodeChangeProposal(
+        proposal = CodeChangeProposal(
             change_request=q_clean,
             target=plan.target_symbol or plan.target_file,
             risk=plan.risk,
@@ -173,6 +173,15 @@ class CodeChangePatchGenerator:
             tests_to_run=plan.relevant_tests,
             warnings=warnings,
         )
+
+        if patch_str:
+            try:
+                from app.changes.service import SafePatchService
+                SafePatchService(project_root=self.project_root).save_latest_patch(proposal.to_dict())
+            except Exception:
+                pass
+
+        return proposal
 
     def _generate_code_proposal(
         self,

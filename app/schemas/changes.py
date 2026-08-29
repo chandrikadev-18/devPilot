@@ -63,6 +63,7 @@ class PlanChangeResponse(BaseModel):
     target_symbol: Optional[str] = Field(None, description="Resolved target symbol name")
     target_file: Optional[str] = Field(None, description="Resolved target file path")
     target_lines: Optional[str] = Field(None, description="Target line span")
+    direct_dependencies: List[str] = Field(default_factory=list, description="Direct callees/dependencies")
     affected_files: List[str] = Field(default_factory=list, description="All impacted file paths")
     affected_symbols: List[str] = Field(default_factory=list, description="All impacted symbol names")
     relevant_tests: List[str] = Field(default_factory=list, description="Relevant test suites")
@@ -71,4 +72,46 @@ class PlanChangeResponse(BaseModel):
     reason: str = Field(..., description="Grounded explanation of change risk")
     evidence: List[ChangePlanEvidenceItem] = Field(default_factory=list, description="Supporting evidence items")
     unverified: List[str] = Field(default_factory=list, description="Unverified claims if any")
+
+
+class GitStatusSummaryItem(BaseModel):
+    branch: str = Field(..., description="Active Git branch")
+    base_branch: Optional[str] = Field(None, description="Tracking/base branch")
+    is_clean: bool = Field(..., description="True if working tree is clean")
+    modified_files: List[str] = Field(default_factory=list)
+    added_files: List[str] = Field(default_factory=list)
+    deleted_files: List[str] = Field(default_factory=list)
+    renamed_files: List[str] = Field(default_factory=list)
+    untracked_files: List[str] = Field(default_factory=list)
+    staged_files: List[str] = Field(default_factory=list)
+    unstaged_files: List[str] = Field(default_factory=list)
+    ahead_commits: int = Field(default=0)
+    behind_commits: int = Field(default=0)
+
+
+class TestRecommendationItem(BaseModel):
+    test_target: str = Field(..., description="Test target identifier or file path")
+    file_path: str = Field(..., description="Test file path")
+    reason: str = Field(..., description="Rationale for recommending this test")
+    symbol_name: Optional[str] = Field(None, description="Associated symbol name")
+
+
+class ReviewChangeRequest(BaseModel):
+    project_dir: str = Field(default=".", description="Target project directory")
+
+
+class ReviewChangeResponse(BaseModel):
+    branch: str = Field(..., description="Active Git branch")
+    base_branch: Optional[str] = Field(None, description="Tracking/base branch")
+    is_clean: bool = Field(..., description="True if working tree is clean")
+    status: GitStatusSummaryItem = Field(..., description="Working tree status summary")
+    changed_files: List[str] = Field(default_factory=list, description="Changed file paths")
+    changed_symbols: List[ChangedSymbolItem] = Field(default_factory=list, description="Changed AST symbols")
+    impact: ChangeImpactItem = Field(..., description="Calculated dependency impact")
+    risk: ChangeRiskItem = Field(..., description="Evaluated change risk")
+    recommended_tests: List[str] = Field(default_factory=list, description="List of recommended test targets")
+    test_recommendations: List[TestRecommendationItem] = Field(default_factory=list, description="Detailed test recommendations")
+    diff_stats: dict = Field(default_factory=dict, description="Diff line additions and deletions")
+    review_notes: List[str] = Field(default_factory=list, description="Specific review findings/warnings")
+    summary: str = Field(..., description="Narrative review summary")
 

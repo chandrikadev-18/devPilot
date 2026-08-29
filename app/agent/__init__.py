@@ -33,6 +33,7 @@ from app.agent.tools import (
     create_git_show_commit_tool,
     create_plan_code_change_tool,
     create_read_file_tool,
+    create_review_changes_tool,
     create_search_code_tool,
     create_semantic_code_search_tool,
     resolve_safe_path,
@@ -157,6 +158,10 @@ def create_default_tool_registry(
     plan_change_spec = create_plan_code_change_tool(project_root=root)
     registry.register(Tool(**plan_change_spec))
 
+    # 24. review_changes (v1.8)
+    review_spec = create_review_changes_tool(project_root=root)
+    registry.register(Tool(**review_spec))
+
     return registry
 
 
@@ -219,6 +224,7 @@ __all__ = [
     "create_analyze_code_change_tool",
     "create_semantic_code_search_tool",
     "create_plan_code_change_tool",
+    "create_review_changes_tool",
     "AgentAnswerVerifier",
     "EvidenceItem",
     "VerificationConfidence",

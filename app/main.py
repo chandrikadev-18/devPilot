@@ -876,7 +876,11 @@ def run_agent(
 
     try:
         embedder = CodeEmbedder()
-        store = QdrantVectorStore(storage_path=storage_path)
+        try:
+            store = QdrantVectorStore(storage_path=storage_path)
+        except Exception:
+            store = QdrantVectorStore(location=":memory:", storage_path=None)
+
         searcher = SemanticSearcher(
             embedder=embedder,
             vector_store=store,
@@ -1737,6 +1741,200 @@ def run_change(change_request: str, project_dir: str = ".", as_json: bool = Fals
         sys.exit(1)
 
 
+def run_apply_change(
+    request: Optional[str] = None,
+    patch_file: Optional[str] = None,
+    dry_run: bool = False,
+    auto_confirm: bool = False,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """
+    Applies a change patch safely with pre-validation, interactive confirmation,
+    post-apply test verification, and automated rollback.
+    """
+    from app.changes.patch import CodeChangePatchGenerator
+    from app.changes.service import SafePatchService
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    service = SafePatchService(project_root=root)
+    patch_str = ""
+    test_targets: Optional[List[str]] = None
+
+    # Step A: Obtain patch string
+    if patch_file:
+        p_path = Path(patch_file)
+        if not p_path.is_absolute():
+            p_path = root / patch_file
+        if not p_path.exists():
+            print(f"Error: Patch file '{patch_file}' does not exist.", file=sys.stderr)
+            sys.exit(1)
+        with open(p_path, "r", encoding="utf-8") as f:
+            patch_str = f.read()
+    elif request:
+        generator = CodeChangePatchGenerator(project_root=root)
+        proposal = generator.generate_patch(change_request=request)
+        patch_str = proposal.patch
+        test_targets = proposal.tests_to_run
+        if not patch_str:
+            if as_json:
+                print(json.dumps({
+                    "status": "validation_failed",
+                    "applied": False,
+                    "errors": proposal.warnings or ["No patch could be generated for the request."],
+                }, indent=2))
+                return
+            print("Error: No code patch could be generated for the request.", file=sys.stderr)
+            for w in proposal.warnings:
+                print(f"  ⚠ {w}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Load latest saved patch
+        latest_data = service.load_latest_patch()
+        if not latest_data or not latest_data.get("patch"):
+            if as_json:
+                print(json.dumps({
+                    "status": "validation_failed",
+                    "applied": False,
+                    "errors": ["No proposed patch found. Run 'python -m app.main change \"<request>\"' first."],
+                }, indent=2))
+                return
+            print("Error: No proposed patch found. Please run 'python -m app.main change \"<request>\"' first.", file=sys.stderr)
+            sys.exit(1)
+        patch_str = latest_data["patch"]
+        test_targets = latest_data.get("tests_to_run")
+
+    # Step B: Dry Run
+    if dry_run:
+        val_result = service.dry_run(patch_str=patch_str)
+        if as_json:
+            print(json.dumps(val_result.to_dict(), indent=2))
+            return
+        print(val_result.to_formatted_text())
+        return
+
+    # Step C: Real Apply with validation and rollback
+    app_result = service.apply_and_validate(
+        patch_str=patch_str,
+        auto_confirm=auto_confirm,
+        test_targets=test_targets,
+    )
+
+    if as_json:
+        print(json.dumps(app_result.to_dict(), indent=2))
+        return
+
+    # Text presentation
+    if app_result.status == "cancelled":
+        print("\nPatch application cancelled.")
+        print("No files were modified.")
+        return
+
+    if app_result.status == "validation_failed":
+        print("\n⚠ Patch Validation Failed.")
+        for e in app_result.errors:
+            print(f"  ✗ {e}")
+        print("No files were modified.")
+        sys.exit(1)
+
+    if app_result.status == "rolled_back":
+        print("\nPatch applied.")
+        if app_result.tests:
+            print("\nRunning tests...")
+            print(f"\n{app_result.tests.get('failed', 0)} failed, {app_result.tests.get('passed', 0)} passed")
+        print("\n⚠ Validation failed.")
+        print("\nRolling back...")
+        print("\n✓ Changes reverted")
+        print("✓ Repository restored")
+        return
+
+    if app_result.status == "success":
+        print("\nPatch applied successfully.")
+        if app_result.tests:
+            print("\nRunning tests...\n")
+            passed = app_result.tests.get("passed", 0)
+            skipped = app_result.tests.get("skipped", 0)
+            print(f"{passed} passed, {skipped} skipped\n")
+            print("Validation:")
+            print("✓ Patch applied")
+            print("✓ Tests passed")
+            print("✓ Repository is healthy")
+        else:
+            print("✓ Patch applied")
+
+
+def run_rollback(checkpoint_id: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """
+    Reverts the most recent or specified DevPilot patch application.
+    """
+    from app.changes.service import SafePatchService
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    service = SafePatchService(project_root=root)
+    res = service.rollback(checkpoint_id=checkpoint_id)
+
+    if as_json:
+        print(json.dumps(res.to_dict(), indent=2))
+        return
+
+    if res.status == "no_checkpoint":
+        print("No rollback checkpoint found.")
+        return
+
+    if res.status == "success":
+        print("Rolling back...\n")
+        print("✓ Changes reverted")
+        print("✓ Repository restored")
+        if res.reverted_files:
+            print("\nReverted files:")
+            for f in res.reverted_files:
+                print(f"  - {f}")
+    else:
+        print(f"Error during rollback: {res.message}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_review(project_dir: str = ".", as_json: bool = False):
+    """
+    Intelligently reviews current Git working tree changes, blast radius impact, tests, and risk.
+    """
+    from app.changes.reviewer import GitChangeReviewer
+    from app.git.repository import NotAGitRepositoryError
+
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        print(f"Error: Project directory does not exist: '{project_dir}'", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        reviewer = GitChangeReviewer(project_root=root)
+        review = reviewer.review_working_tree()
+
+        if as_json:
+            print(json.dumps(review.to_dict(), indent=2))
+            return
+
+        print(review.to_formatted_text())
+    except NotAGitRepositoryError as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+            return
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+            return
+        print(f"Error reviewing Git changes: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     
@@ -1771,14 +1969,18 @@ def main():
         "change-analyze",
         "semantic-search",
         "plan-change",
+        "plan",
         "change",
+        "apply-change",
+        "rollback",
+        "review",
         "-h",
         "--help",
     ]
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
 
-    parser = argparse.ArgumentParser(description="DevPilot v1.3 - Code Intelligence, Git Intelligence, Graph Dependencies, and AI Agent")
+    parser = argparse.ArgumentParser(description="DevPilot v1.8 - Git-Aware Change Planning & Intelligent Review")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Scan subcommand
@@ -1985,6 +2187,32 @@ def main():
     change_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     change_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # apply-change subcommand (v1.7 Safe Patch Application)
+    apply_change_parser = subparsers.add_parser("apply-change", help="Safely validate and apply a proposed code patch with post-apply test execution and rollback")
+    apply_change_parser.add_argument("request", type=str, nargs="?", default=None, help="Optional change request or target to generate and apply")
+    apply_change_parser.add_argument("--patch", type=str, default=None, help="Path to unified diff patch file")
+    apply_change_parser.add_argument("--dry-run", action="store_true", help="Validate patch without modifying repository files")
+    apply_change_parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt and apply automatically")
+    apply_change_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    apply_change_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # rollback subcommand (v1.7 Checkpoint Rollback)
+    rollback_parser = subparsers.add_parser("rollback", help="Revert the most recent DevPilot-applied patch from backup checkpoint")
+    rollback_parser.add_argument("checkpoint", type=str, nargs="?", default=None, help="Optional specific checkpoint ID to restore")
+    rollback_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    rollback_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # review subcommand (v1.8 Git-Aware Review)
+    review_parser = subparsers.add_parser("review", help="Intelligently review current Git working tree changes, blast radius impact, tests, and risk")
+    review_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    review_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # plan subcommand (v1.8 alias for plan-change)
+    plan_parser = subparsers.add_parser("plan", help="Plan code changes, impact, affected files, tests, and implementation order")
+    plan_parser.add_argument("request", type=str, help="Developer change request (e.g. 'Modify GraphBuilder.build')")
+    plan_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    plan_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
+
     args = parser.parse_args()
     
     if args.command == "scan":
@@ -2158,6 +2386,32 @@ def main():
         )
     elif args.command == "change":
         run_change(
+            change_request=args.request,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "apply-change":
+        run_apply_change(
+            request=args.request,
+            patch_file=args.patch,
+            dry_run=args.dry_run,
+            auto_confirm=args.yes,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "rollback":
+        run_rollback(
+            checkpoint_id=args.checkpoint,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "review":
+        run_review(
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "plan":
+        run_plan_change(
             change_request=args.request,
             project_dir=args.project_dir,
             as_json=args.json,

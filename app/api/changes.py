@@ -15,8 +15,12 @@ from app.schemas.changes import (
     ChangeImpactItem,
     ChangePlanEvidenceItem,
     ChangeRiskItem,
+    GitStatusSummaryItem,
     PlanChangeRequest,
     PlanChangeResponse,
+    ReviewChangeRequest,
+    ReviewChangeResponse,
+    TestRecommendationItem,
 )
 
 router = APIRouter(prefix="/changes", tags=["Code Change Intelligence"])
@@ -164,4 +168,102 @@ def plan_code_change_get(
     project_dir: str = Query(".", description="Target project directory"),
 ) -> PlanChangeResponse:
     return _run_change_plan(change_request=change_request, project_dir=project_dir)
+
+
+def _run_change_review(project_dir: str) -> ReviewChangeResponse:
+    root = Path(project_dir).resolve()
+    if not root.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Project directory does not exist: '{project_dir}'",
+        )
+
+    try:
+        from app.changes.reviewer import GitChangeReviewer
+        reviewer = GitChangeReviewer(project_root=root)
+        review = reviewer.review_working_tree()
+
+        return ReviewChangeResponse(
+            branch=review.branch,
+            base_branch=review.base_branch,
+            is_clean=review.is_clean,
+            status=GitStatusSummaryItem(
+                branch=review.status.branch,
+                base_branch=review.status.base_branch,
+                is_clean=review.status.is_clean,
+                modified_files=review.status.modified_files,
+                added_files=review.status.added_files,
+                deleted_files=review.status.deleted_files,
+                renamed_files=review.status.renamed_files,
+                untracked_files=review.status.untracked_files,
+                staged_files=review.status.staged_files,
+                unstaged_files=review.status.unstaged_files,
+                ahead_commits=review.status.ahead_commits,
+                behind_commits=review.status.behind_commits,
+            ),
+            changed_files=review.changed_files,
+            changed_symbols=[
+                ChangedSymbolItem(
+                    name=s.name,
+                    file=s.file,
+                    change_type=s.change_type,
+                    symbol_type=s.symbol_type,
+                    line_start=s.line_start,
+                    line_end=s.line_end,
+                )
+                for s in review.changed_symbols
+            ],
+            impact=ChangeImpactItem(
+                direct=review.impact.direct_dependents,
+                indirect=review.impact.indirect_dependents,
+                files=review.impact.impacted_files,
+                total_affected_symbols=review.impact.total_affected_symbols,
+            ),
+            risk=ChangeRiskItem(
+                score=review.risk.score,
+                level=review.risk.level,
+                reasons=review.risk.reasons,
+            ),
+            recommended_tests=review.recommended_tests,
+            test_recommendations=[
+                TestRecommendationItem(
+                    test_target=t.test_target,
+                    file_path=t.file_path,
+                    reason=t.reason,
+                    symbol_name=t.symbol_name,
+                )
+                for t in review.test_recommendations
+            ],
+            diff_stats=review.diff_stats,
+            review_notes=review.review_notes,
+            summary=review.summary,
+        )
+    except NotAGitRepositoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reviewing Git changes: {str(e)}")
+
+
+@router.post(
+    "/review",
+    response_model=ReviewChangeResponse,
+    summary="Review Current Git Changes (POST)",
+    description="Inspects working tree status, diff, changed symbols, impact, recommended tests, and scores risk.",
+)
+def review_code_change_post(
+    request: ReviewChangeRequest,
+) -> ReviewChangeResponse:
+    return _run_change_review(project_dir=request.project_dir)
+
+
+@router.get(
+    "/review",
+    response_model=ReviewChangeResponse,
+    summary="Review Current Git Changes (GET)",
+    description="Inspects working tree status, diff, changed symbols, impact, recommended tests, and scores risk.",
+)
+def review_code_change_get(
+    project_dir: str = Query(".", description="Target project directory"),
+) -> ReviewChangeResponse:
+    return _run_change_review(project_dir=project_dir)
 

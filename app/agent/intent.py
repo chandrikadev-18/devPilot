@@ -13,6 +13,7 @@ from typing import List, Optional
 
 class QuestionIntent(str, Enum):
     IMPACT = "IMPACT"
+    REVIEW_CHANGES = "REVIEW_CHANGES"
     CODE_CHANGE_ANALYSIS = "CODE_CHANGE_ANALYSIS"
     GIT_CHANGE_AND_IMPACT = "GIT_CHANGE_AND_IMPACT"
     GIT_LAST_CHANGE = "GIT_LAST_CHANGE"
@@ -45,11 +46,11 @@ def _clean_symbol_candidate(raw: str) -> str:
     """Cleans a raw extracted symbol string."""
     cleaned = raw.strip().strip("'\"`?,.:;()[]{}")
     # Strip common leading prefixes
-    for prefix in ("the ", "a ", "function ", "method ", "class ", "module "):
+    for prefix in ("the ", "a ", "function ", "method ", "class ", "module ", "modifying ", "refactoring ", "improving "):
         if cleaned.lower().startswith(prefix):
             cleaned = cleaned[len(prefix):].strip()
     # Strip common trailing suffixes
-    for suffix in (" function", " method", " class", " module"):
+    for suffix in (" function", " method", " class", " module", " to improve graph construction", " to improve performance"):
         if cleaned.lower().endswith(suffix):
             cleaned = cleaned[:-len(suffix)].strip()
     return cleaned.strip().strip("'\"`?,.:;()[]{}")
@@ -65,7 +66,7 @@ def classify_question_intent(question: str) -> IntentClassification:
     q = question.strip()
     q_lower = q.lower()
 
-    # 0. CODE_CHANGE_ANALYSIS Intent (v1.7)
+    # 0a. CODE_CHANGE_ANALYSIS Intent (v1.7)
     code_change_patterns = [
         (r"(?:what|which\s+symbols?)\s+changed\s+in\s+(?:the\s+)?(?:last|latest)\s+commit", "HEAD"),
         (r"(?:what|which\s+symbols?)\s+changed\s+in\s+commit\s+([a-fA-F0-9]{4,40}|HEAD)", None),
@@ -88,14 +89,33 @@ def classify_question_intent(question: str) -> IntentClassification:
                 preferred_tools=["analyze_code_change"],
             )
 
-    # 0b. CHANGE_PLAN Intent (v1.7)
+    # 0b. REVIEW_CHANGES Intent (v1.8)
+    review_change_patterns = [
+        r"^(?:review|inspect|summarize|analyze)\s+(?:my\s+|the\s+|all\s+)?(?:current\s+|uncommitted\s+|working\s+tree\s+|local\s+)?(?:changes|diff|modifications|work)",
+        r"^what\s+(?:is|are|will\s+be|could\s+be)\s+affected\s+by\s+(?:my\s+|the\s+)?(?:current\s+|uncommitted\s+|local\s+)?changes",
+        r"^what\s+tests?\s+(?:should|do|must|can)\s+(?:i|we)\s+run\s+(?:for|on)\s+(?:my\s+|the\s+)?(?:current\s+|uncommitted\s+|local\s+)?changes",
+        r"^what\s+tests?\s+cover\s+(?:my\s+|the\s+)?(?:current\s+|uncommitted\s+|local\s+)?changes",
+        r"^what\s+changed\s+in\s+(?:my\s+|the\s+)?(?:working\s+tree|local\s+repository|local\s+branch|workspace)",
+        r"^what\s+are\s+my\s+(?:current\s+|uncommitted\s+|local\s+)?changes",
+        r"^(?:show|get|display)\s+(?:my\s+|the\s+)?(?:current\s+|uncommitted\s+)?git\s+(?:changes|diff|status)",
+    ]
+    for pat in review_change_patterns:
+        if re.search(pat, q, re.IGNORECASE):
+            return IntentClassification(
+                intent=QuestionIntent.REVIEW_CHANGES,
+                preferred_tools=["review_changes"],
+            )
+
+    # 0b. CHANGE_PLAN Intent (v1.7/v1.8)
     # "Plan changes for X", "How should I refactor X?", "Improve GraphBuilder.build performance", "What is the plan to change X?"
     plan_patterns = [
+        r"^(?:create|generate|build|provide|make)?\s*(?:a\s+)?change\s+plan\s+(?:for|to|on)\s+(?:modifying\s+|refactoring\s+|improving\s+|updating\s+)?(.+)",
         r"^(?:plan|how\s+to\s+plan)\s+(?:changes?\s+(?:for|to|in)|refactoring\s+(?:of|for)|modification\s+(?:of|for))\s+(.+)",
         r"^how\s+(?:should|can|do)\s+(?:i|we)\s+(?:refactor|change|modify|improve|update)\s+(.+)",
         r"^plan\s+(?:to\s+)?(?:improve|refactor|change|modify|update|optimize)\s+(.+)",
         r"^(?:improve|optimize|refactor)\s+([a-zA-Z0-9_.]+(?:\.[a-zA-Z0-9_]+)?)\s+(?:performance|speed|implementation|logic)",
         r"^what\s+(?:is|would\s+be)\s+the\s+(?:implementation\s+)?plan\s+(?:to|for)\s+(?:change|refactor|improve|modify)\s+(.+)",
+        r"^i\s+want\s+to\s+(?:modify|change|refactor|improve|update)\s+(.+)",
     ]
     for pat in plan_patterns:
         m = re.search(pat, q, re.IGNORECASE)
