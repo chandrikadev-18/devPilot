@@ -84,11 +84,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_router
 from app.api.changes import router as changes_router
+from app.api.projects import router as projects_router
 
 app = FastAPI(
     title="DevPilot API",
     version="1.4",
-    description="DevPilot AI Codebase Exploration & Analysis REST API",
+    description="DevPilot AI Codebase Exploration, Project Management & Analysis REST API",
 )
 
 app.add_middleware(
@@ -103,7 +104,9 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+app.include_router(projects_router)
 app.include_router(changes_router)
+
 
 
 
@@ -2342,7 +2345,204 @@ def run_fix_loop(
         sys.exit(1)
 
 
+def run_project_list(status: Optional[str] = None, as_json: bool = False):
+    """Lists registered projects."""
+    from app.projects.service import ProjectService
+    try:
+        service = ProjectService()
+        projects = service.list_projects(status=status)
+        if as_json:
+            print(json.dumps([p.to_dict() for p in projects], indent=2))
+            return
+
+        print("DevPilot v2.5 — Registered Projects")
+        print("───────────────────────────────────")
+        if not projects:
+            print("No projects registered. Use 'project add <path>' to register a codebase.")
+            return
+
+        print(f"Total Projects: {len(projects)}\n")
+        for p in projects:
+            repo_str = f" ({p.repository})" if p.repository else ""
+            print(f"• {p.name} [{p.project_id}] — Status: {p.status}")
+            print(f"  Path:           {p.path}")
+            print(f"  Default Branch: {p.default_branch}{repo_str}\n")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error listing projects: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_project_add(
+    path: str,
+    name: Optional[str] = None,
+    repository: Optional[str] = None,
+    default_branch: str = "main",
+    as_json: bool = False,
+):
+    """Registers a new project."""
+    from app.projects.service import ProjectService
+    try:
+        service = ProjectService()
+        project = service.register_project(
+            path=path,
+            name=name,
+            repository=repository,
+            default_branch=default_branch,
+        )
+        if as_json:
+            print(json.dumps(project.to_dict(), indent=2))
+            return
+
+        print("DevPilot v2.5 — Project Registered")
+        print("──────────────────────────────────")
+        print(f"Project ID:     {project.project_id}")
+        print(f"Name:           {project.name}")
+        print(f"Path:           {project.path}")
+        print(f"Status:         {project.status}")
+        print(f"Default Branch: {project.default_branch}")
+        if project.repository:
+            print(f"Repository:     {project.repository}")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error adding project: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_project_info(project_id: str, as_json: bool = False):
+    """Displays metadata for a registered project."""
+    from app.projects.service import ProjectService
+    try:
+        service = ProjectService()
+        project = service.get_project(project_id)
+        if as_json:
+            print(json.dumps(project.to_dict(), indent=2))
+            return
+
+        print(project.to_formatted_text())
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error retrieving project info: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_project_scan(project_id: str, as_json: bool = False):
+    """Executes a file scan on a registered project."""
+    from app.projects.service import ProjectService
+    try:
+        service = ProjectService()
+        op, result = service.scan_project(project_id)
+        if as_json:
+            print(json.dumps({"operation": op.to_dict(), "scan": result}, indent=2))
+            return
+
+        print("DevPilot v2.5 — Project File Scan")
+        print("─────────────────────────────────")
+        print(f"Project:      {result['project_name']} ({project_id})")
+        print(f"Operation ID: {op.operation_id}")
+        print(f"Status:       {op.status}\n")
+        print(f"Files:        {result['total_files']}")
+        print(f"Directories:  {result['total_dirs']}\n")
+        print("Extensions:")
+        sorted_exts = sorted(result["extensions"].items(), key=lambda item: item[1], reverse=True)
+        for ext, count in sorted_exts:
+            ext_display = ext if ext else "(none)"
+            print(f"  {ext_display:<8} {count}")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error scanning project: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_project_graph(project_id: str, as_json: bool = False):
+    """Builds codebase dependency graph for a registered project."""
+    from app.projects.service import ProjectService
+    try:
+        service = ProjectService()
+        op, result = service.build_graph(project_id)
+        if as_json:
+            print(json.dumps({"operation": op.to_dict(), "graph": result}, indent=2))
+            return
+
+        print("DevPilot v2.5 — Project Dependency Graph")
+        print("────────────────────────────────────────")
+        print(f"Project ID:   {project_id}")
+        print(f"Operation ID: {op.operation_id}")
+        print(f"Status:       {op.status}\n")
+        print(f"Total Nodes:  {result['total_nodes']}")
+        print(f"Total Edges:  {result['total_edges']}")
+        print(f"Files:        {result['files']}")
+        print(f"Classes:      {result['classes']}")
+        print(f"Functions:    {result['functions']}")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error building project graph: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_project_review(project_id: str, as_json: bool = False):
+    """Executes read-only code review for a registered project."""
+    from app.projects.service import ProjectService
+    try:
+        service = ProjectService()
+        op, result = service.review_project(project_id)
+        if as_json:
+            print(json.dumps({"operation": op.to_dict(), "review": result}, indent=2))
+            return
+
+        print("DevPilot v2.5 — Project Code Review")
+        print("───────────────────────────────────")
+        print(f"Project ID:   {project_id}")
+        print(f"Operation ID: {op.operation_id}")
+        print(f"Branch:       {result.get('branch', 'unknown')}")
+        print(f"Working Tree: {'CLEAN' if result.get('is_clean') else 'DIRTY'}\n")
+        changed = result.get("changed_files", [])
+        print(f"Changed Files ({len(changed)}):")
+        for f in changed:
+            print(f"  • {f}")
+
+        risk = result.get("risk", {})
+        print(f"\nRisk Level:   {risk.get('level', 'UNKNOWN')} (Score: {risk.get('score', 0)})")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error reviewing project: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_project_delete(project_id: str, hard: bool = False, as_json: bool = False):
+    """Deletes or archives a registered project."""
+    from app.projects.service import ProjectService
+    try:
+        service = ProjectService()
+        success = service.delete_project(project_id, hard_delete=hard)
+        action = "deleted" if hard else "archived"
+        if as_json:
+            print(json.dumps({"project_id": project_id, "action": action, "success": success}, indent=2))
+            return
+
+        print(f"Project '{project_id}' successfully {action}.")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error deleting project: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
+
 
     """Main CLI entry point."""
     
@@ -2390,9 +2590,11 @@ def main():
         "execute",
         "fix",
         "fix-loop",
+        "project",
         "-h",
         "--help",
     ]
+
 
     if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith("-"):
         sys.argv.insert(1, "scan")
@@ -2688,7 +2890,51 @@ def main():
     fix_loop_parser.add_argument("--project-dir", type=str, default=".", help="Target project directory")
     fix_loop_parser.add_argument("--json", action="store_true", help="Output results in JSON format")
 
+    # project subcommand (v2.5 Project Management)
+    project_parser = subparsers.add_parser("project", help="Manage codebases and execute project-scoped operations")
+    project_subparsers = project_parser.add_subparsers(dest="project_action", required=True)
+
+    # project list
+    proj_list_p = project_subparsers.add_parser("list", help="List registered projects")
+    proj_list_p.add_argument("--status", type=str, default=None, help="Filter by status (ACTIVE, ARCHIVED, ERROR)")
+    proj_list_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # project add
+    proj_add_p = project_subparsers.add_parser("add", help="Register a new codebase project")
+    proj_add_p.add_argument("path", type=str, help="Path to project codebase directory")
+    proj_add_p.add_argument("--name", type=str, default=None, help="Optional custom project name")
+    proj_add_p.add_argument("--repository", type=str, default=None, help="Optional Git remote repository URL")
+    proj_add_p.add_argument("--default-branch", type=str, default="main", help="Default branch (default: main)")
+    proj_add_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # project info
+    proj_info_p = project_subparsers.add_parser("info", help="Get project metadata")
+    proj_info_p.add_argument("project_id", type=str, help="Project ID")
+    proj_info_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # project scan
+    proj_scan_p = project_subparsers.add_parser("scan", help="Scan project files and extensions")
+    proj_scan_p.add_argument("project_id", type=str, help="Project ID")
+    proj_scan_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # project graph
+    proj_graph_p = project_subparsers.add_parser("graph", help="Build codebase dependency graph")
+    proj_graph_p.add_argument("project_id", type=str, help="Project ID")
+    proj_graph_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # project review
+    proj_review_p = project_subparsers.add_parser("review", help="Execute read-only code review on project")
+    proj_review_p.add_argument("project_id", type=str, help="Project ID")
+    proj_review_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # project delete
+    proj_del_p = project_subparsers.add_parser("delete", help="Delete or archive a project")
+    proj_del_p.add_argument("project_id", type=str, help="Project ID")
+    proj_del_p.add_argument("--hard", action="store_true", help="Permanently remove project registration")
+    proj_del_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
     args = parser.parse_args()
+
 
     
     if args.command == "scan":
@@ -2950,8 +3196,29 @@ def main():
             project_dir=args.project_dir,
             as_json=args.json,
         )
+    elif args.command == "project":
+        if args.project_action == "list":
+            run_project_list(status=args.status, as_json=args.json)
+        elif args.project_action == "add":
+            run_project_add(
+                path=args.path,
+                name=args.name,
+                repository=args.repository,
+                default_branch=args.default_branch,
+                as_json=args.json,
+            )
+        elif args.project_action == "info":
+            run_project_info(project_id=args.project_id, as_json=args.json)
+        elif args.project_action == "scan":
+            run_project_scan(project_id=args.project_id, as_json=args.json)
+        elif args.project_action == "graph":
+            run_project_graph(project_id=args.project_id, as_json=args.json)
+        elif args.project_action == "review":
+            run_project_review(project_id=args.project_id, as_json=args.json)
+        elif args.project_action == "delete":
+            run_project_delete(project_id=args.project_id, hard=args.hard, as_json=args.json)
 
 
 if __name__ == "__main__":
-
     main()
+
