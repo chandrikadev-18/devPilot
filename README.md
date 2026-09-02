@@ -473,9 +473,24 @@ curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/health/details
 ```
 
+### 13. React + Vite + TypeScript Frontend (v3.0)
+Modern developer dashboard for codebase exploration, interactive relationship graphs, autonomous agent chat, and change workflows:
+
+```bash
+# Start Backend
+python -m app.main api
+
+# Start Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Visit `http://localhost:5173` to access the full enterprise dashboard.
+
 ---
 
-## Configuration & Environment Variables (v2.6)
+## Configuration & Environment Variables (v2.6 - v3.0)
 
 DevPilot is configured via environment variables or a `.env` file in the project root:
 
@@ -488,26 +503,25 @@ DevPilot is configured via environment variables or a `.env` file in the project
 | `OPERATION_TIMEOUT` | `60.0` | Maximum duration in seconds for project-scoped operations |
 | `TEST_TIMEOUT` | `30.0` | Maximum duration in seconds for test runner execution |
 | `MAX_PROJECT_SIZE_MB` | `500.0` | Maximum project size limit |
+| `VITE_API_URL` | `http://127.0.0.1:8000` | Frontend backend API URL (in `frontend/.env`) |
 | `LLM_PROVIDER` | `groq` | Supported LLM provider (`groq`) |
 | `LLM_MODEL` | `openai/gpt-oss-120b` | Model identifier |
 | `LLM_API_KEY` | *(unset)* | API key for LLM provider (redacted automatically in logs) |
 
 ---
 
-## Structured Logging & Secret Redaction (v2.6)
-
-DevPilot features production-ready structured JSON logging:
-- Automatic redaction of sensitive credentials (`gsk_...`, `Bearer ...`, API keys, passwords).
-- Contextual tracking (`timestamp`, `module`, `operation`, `project_id`, `operation_id`, `duration_ms`, `status`).
-
----
-
 ## Running Tests
 
-Run all unit, integration, and regression tests using `pytest` without external dependencies:
-
+### Backend Tests
 ```bash
 pytest -q
+```
+
+### Frontend Tests & Build
+```bash
+cd frontend
+npm run test
+npm run build
 ```
 
 ---
@@ -524,6 +538,8 @@ pytest -q
 | **Read-Only Git Intelligence & History** | Completed (v0.9) | Maintained |
 | **Code Dependency Graph & Impact Analysis** | Completed (v1.0 - v1.3) | Maintained |
 | **Autonomous Change Planning & Patch Loop** | Completed (v2.0 - v2.4) | Maintained |
-| **Project Management & Operation Tracking** | **Completed (v2.5)** | Maintained |
-| **Production Hardening, Health & Observability** | **Completed (v2.6)** | Maintained |
+| **Project Management & Operation Tracking** | Completed (v2.5) | Maintained |
+| **Production Hardening, Health & Observability** | Completed (v2.6) | Maintained |
+| **React + Vite + TypeScript Frontend** | **Completed (v3.0)** | Maintained |
+
 
