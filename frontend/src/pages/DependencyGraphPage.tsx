@@ -88,35 +88,52 @@ export const DependencyGraphPage: React.FC = () => {
     }
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!symbolQuery.trim() || !project) return;
-
+  const runQueryForTab = async (tab: string, sym: string, curDepth: number) => {
+    if (!sym.trim() || !project) return;
     try {
       setIsQuerying(true);
-      const sym = symbolQuery.trim();
+      const s = sym.trim();
       const pPath = project.path;
 
-      if (activeTab === 'callers') {
-        const res = await graphApi.getCallers(sym, pPath);
+      if (tab === 'callers') {
+        const res = await graphApi.getCallers(s, pPath);
         setCallersData(res);
-      } else if (activeTab === 'callees') {
-        const res = await graphApi.getCallees(sym, pPath);
+      } else if (tab === 'callees') {
+        const res = await graphApi.getCallees(s, pPath);
         setCalleesData(res);
-      } else if (activeTab === 'dependencies') {
-        const res = await graphApi.getDependencies(sym, depth, pPath);
+      } else if (tab === 'dependencies') {
+        const res = await graphApi.getDependencies(s, curDepth, pPath);
         setDependenciesData(res);
-      } else if (activeTab === 'dependents') {
-        const res = await graphApi.getDependents(sym, depth, pPath);
+      } else if (tab === 'dependents') {
+        const res = await graphApi.getDependents(s, curDepth, pPath);
         setDependentsData(res);
-      } else if (activeTab === 'impact') {
-        const res = await graphApi.getImpact(sym, depth, pPath);
+      } else if (tab === 'impact') {
+        const res = await graphApi.getImpact(s, curDepth, pPath);
         setImpactData(res);
       }
     } catch (err: any) {
       showToast(err.message || 'Symbol analysis failed', 'error');
     } finally {
       setIsQuerying(false);
+    }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    runQueryForTab(activeTab, symbolQuery, depth);
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    if (symbolQuery.trim()) {
+      runQueryForTab(tab, symbolQuery, depth);
+    }
+  };
+
+  const handleDepthChange = (newDepth: number) => {
+    setDepth(newDepth);
+    if (symbolQuery.trim() && (activeTab === 'dependencies' || activeTab === 'dependents' || activeTab === 'impact')) {
+      runQueryForTab(activeTab, symbolQuery, newDepth);
     }
   };
 
@@ -179,7 +196,7 @@ export const DependencyGraphPage: React.FC = () => {
               <span style={{ fontSize: '0.825rem', color: 'var(--text-secondary)' }}>Depth:</span>
               <select
                 value={depth}
-                onChange={(e) => setDepth(Number(e.target.value))}
+                onChange={(e) => handleDepthChange(Number(e.target.value))}
                 style={{
                   backgroundColor: 'var(--bg-input)',
                   border: '1px solid var(--border-subtle)',
@@ -211,9 +228,7 @@ export const DependencyGraphPage: React.FC = () => {
             { id: 'impact', label: 'Blast Radius Impact', icon: <Activity size={15} /> },
           ]}
           activeTab={activeTab}
-          onChange={(tab) => {
-            setActiveTab(tab);
-          }}
+          onChange={handleTabChange}
         />
 
         {/* Tab Result Views */}
@@ -231,15 +246,22 @@ export const DependencyGraphPage: React.FC = () => {
                   <EmptyState title="No Inbound Callers" description="This symbol has no static callers within the project." />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {callersData.callers.map((c, idx) => (
-                      <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
-                        <div>
-                          <code style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.caller_name}</code>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>line {c.caller_line}</span>
+                    {callersData.callers.map((c, idx) => {
+                      const callerName = c.name || c.caller_name || c.qualified_name || 'Unknown';
+                      const callerLine = c.call_line ?? c.caller_line ?? c.start_line;
+                      const callerFile = c.file_path || c.caller_file;
+                      return (
+                        <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <code style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{callerName}</code>
+                            {callerLine !== undefined && (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>line {callerLine}</span>
+                            )}
+                          </div>
+                          {callerFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{callerFile}</span>}
                         </div>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{c.caller_file}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -257,11 +279,16 @@ export const DependencyGraphPage: React.FC = () => {
                   <EmptyState title="No Outbound Calls" description="This symbol does not invoke other static project symbols." />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {calleesData.callees.map((c, idx) => (
-                      <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                        <code style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>{c.callee_name}</code>
-                      </div>
-                    ))}
+                    {calleesData.callees.map((c, idx) => {
+                      const calleeName = c.name || c.callee_name || c.qualified_name || 'Unknown';
+                      const calleeFile = c.file_path || c.callee_file;
+                      return (
+                        <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <code style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>{calleeName}</code>
+                          {calleeFile && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{calleeFile}</span>}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -279,12 +306,18 @@ export const DependencyGraphPage: React.FC = () => {
                   <EmptyState title="No Dependencies" description="No outbound dependencies found at this depth." />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {dependenciesData.dependencies.map((d, idx) => (
-                      <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
-                        <code>{d.target}</code>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>depth {d.depth}</span>
-                      </div>
-                    ))}
+                    {dependenciesData.dependencies.map((d, idx) => {
+                      const depName = d.name || d.target || d.qualified_name || 'Unknown';
+                      return (
+                        <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <code>{depName}</code>
+                            {d.call_path && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{d.call_path}</span>}
+                          </div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>depth {d.depth}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -302,12 +335,18 @@ export const DependencyGraphPage: React.FC = () => {
                   <EmptyState title="No Dependents" description="No upstream dependents found at this depth." />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {dependentsData.dependents.map((d, idx) => (
-                      <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
-                        <code>{d.source}</code>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>depth {d.depth}</span>
-                      </div>
-                    ))}
+                    {dependentsData.dependents.map((d, idx) => {
+                      const depName = d.name || d.source || 'Unknown';
+                      return (
+                        <div key={idx} style={{ padding: '0.6rem 0.8rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <code>{depName}</code>
+                            {d.dependent_path && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{d.dependent_path}</span>}
+                          </div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>depth {d.depth}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -327,21 +366,45 @@ export const DependencyGraphPage: React.FC = () => {
                     {impactData.direct_callers.length === 0 ? (
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>None</span>
                     ) : (
-                      impactData.direct_callers.map((s, idx) => (
-                        <div key={idx} style={{ fontSize: '0.825rem' }}><code>{s}</code></div>
-                      ))
+                      impactData.direct_callers.map((s, idx) => {
+                        const name = typeof s === 'string' ? s : s.name || s.id || 'Unknown';
+                        const file = typeof s !== 'string' ? s.file_path : undefined;
+                        return (
+                          <div key={idx} style={{ fontSize: '0.825rem', marginBottom: '0.35rem', display: 'flex', justifyContent: 'space-between' }}>
+                            <code>{name}</code>
+                            {file && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{file}</span>}
+                          </div>
+                        );
+                      })
                     )}
                   </Card>
                   <Card title={`Indirect Affected (${impactData.indirect_callers.length})`}>
                     {impactData.indirect_callers.length === 0 ? (
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>None</span>
                     ) : (
-                      impactData.indirect_callers.map((s, idx) => (
-                        <div key={idx} style={{ fontSize: '0.825rem' }}><code>{s}</code></div>
-                      ))
+                      impactData.indirect_callers.map((s, idx) => {
+                        const name = typeof s === 'string' ? s : s.name || s.id || 'Unknown';
+                        const file = typeof s !== 'string' ? s.file_path : undefined;
+                        return (
+                          <div key={idx} style={{ fontSize: '0.825rem', marginBottom: '0.35rem', display: 'flex', justifyContent: 'space-between' }}>
+                            <code>{name}</code>
+                            {file && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{file}</span>}
+                          </div>
+                        );
+                      })
                     )}
                   </Card>
                 </div>
+
+                {impactData.impacted_files && impactData.impacted_files.length > 0 && (
+                  <Card title={`Impacted Files (${impactData.impacted_files.length})`}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      {impactData.impacted_files.map((file, idx) => (
+                        <Badge key={idx} variant="primary"><code>{file}</code></Badge>
+                      ))}
+                    </div>
+                  </Card>
+                )}
               </div>
             ) : (
               <EmptyState title="Run Blast Radius Analysis" description="Computes direct and recursive upstream callers affected if this symbol is modified." />

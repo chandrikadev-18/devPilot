@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, RefreshCw } from 'lucide-react';
+import { Activity, Filter, RefreshCw } from 'lucide-react';
 import { projectsApi } from '../api/projects';
 import { OperationStatusBadge } from '../components/badges/OperationStatusBadge';
 import { Button } from '../components/common/Button';
@@ -16,6 +16,7 @@ import { Operation } from '../types/projects';
 export const OperationsPage: React.FC = () => {
   const { activeProject } = useProject();
   const [operations, setOperations] = useState<Operation[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [selectedOp, setSelectedOp] = useState<Operation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { showToast } = useToast();
@@ -27,7 +28,8 @@ export const OperationsPage: React.FC = () => {
     }
     try {
       setIsLoading(true);
-      const res = await projectsApi.listOperations(activeProject.project_id);
+      const filter = statusFilter === 'ALL' ? undefined : statusFilter;
+      const res = await projectsApi.listOperations(activeProject.project_id, filter);
       setOperations(res.operations);
     } catch (err: any) {
       showToast(err.message || 'Failed to load operations', 'error');
@@ -38,7 +40,12 @@ export const OperationsPage: React.FC = () => {
 
   useEffect(() => {
     loadOperations();
-  }, [activeProject]);
+  }, [activeProject, statusFilter]);
+
+  const filteredOps = operations.filter((op) => {
+    if (statusFilter === 'ALL') return true;
+    return op.status.toUpperCase() === statusFilter.toUpperCase();
+  });
 
   return (
     <div className="page-wrapper">
@@ -61,6 +68,34 @@ export const OperationsPage: React.FC = () => {
       </div>
 
       <Card padding="md">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Filter size={15} color="var(--text-muted)" />
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status:</span>
+            {['ALL', 'SUCCESS', 'RUNNING', 'FAILED', 'PENDING'].map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                style={{
+                  padding: '0.25rem 0.6rem',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.775rem',
+                  fontWeight: 600,
+                  backgroundColor: statusFilter === st ? 'var(--accent-blue)' : 'rgba(255, 255, 255, 0.04)',
+                  color: statusFilter === st ? '#ffffff' : 'var(--text-secondary)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Showing {filteredOps.length} operations
+          </span>
+        </div>
+
         {!activeProject ? (
           <EmptyState
             title="No Active Project Selected"
@@ -68,10 +103,10 @@ export const OperationsPage: React.FC = () => {
           />
         ) : isLoading ? (
           <Spinner label="Loading project operation logs..." />
-        ) : operations.length === 0 ? (
+        ) : filteredOps.length === 0 ? (
           <EmptyState
             title="No Operations Recorded"
-            description={`No operations have been recorded yet for ${activeProject.name}.`}
+            description={`No operations matching "${statusFilter}" have been recorded for ${activeProject.name}.`}
           />
         ) : (
           <Table<Operation>
@@ -120,7 +155,7 @@ export const OperationsPage: React.FC = () => {
                 width: '100px',
               },
             ]}
-            data={operations}
+            data={filteredOps}
           />
         )}
       </Card>

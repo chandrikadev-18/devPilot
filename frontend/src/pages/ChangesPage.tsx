@@ -26,6 +26,7 @@ import { ChangeProposal, PlanChangeResponse } from '../types/changes';
 
 export const ChangesPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const [project, setProject] = useState<any | null>(null);
   const [requestText, setRequestText] = useState('');
   const [isPlanning, setIsPlanning] = useState(false);
   const [isProposing, setIsProposing] = useState(false);
@@ -37,13 +38,19 @@ export const ChangesPage: React.FC = () => {
 
   const { showToast } = useToast();
 
+  React.useEffect(() => {
+    if (!projectId) return;
+    projectsApi.get(projectId).then(setProject).catch(() => {});
+  }, [projectId]);
+
   const handlePlan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!requestText.trim() || !projectId) return;
 
     try {
       setIsPlanning(true);
-      const proj = await projectsApi.get(projectId);
+      const proj = project || (await projectsApi.get(projectId));
+      setProject(proj);
       const res = await changesApi.plan(requestText.trim(), proj.path);
       setPlan(res);
       showToast('Change plan created', 'success');
@@ -59,7 +66,8 @@ export const ChangesPage: React.FC = () => {
 
     try {
       setIsProposing(true);
-      const proj = await projectsApi.get(projectId);
+      const proj = project || (await projectsApi.get(projectId));
+      setProject(proj);
       const res = await changesApi.propose(requestText.trim(), proj.path);
       setProposal(res);
       showToast(`Proposal ${res.proposal_id} created`, 'success');
@@ -74,7 +82,7 @@ export const ChangesPage: React.FC = () => {
     if (!proposal) return;
     try {
       setActionLoading('approve');
-      const res = await changesApi.approveProposal(proposal.proposal_id);
+      const res = await changesApi.approveProposal(proposal.proposal_id, project?.path, true);
       setProposal(res);
       showToast('Proposal approved', 'success');
     } catch (err: any) {
@@ -88,7 +96,7 @@ export const ChangesPage: React.FC = () => {
     if (!proposal) return;
     try {
       setActionLoading('reject');
-      const res = await changesApi.rejectProposal(proposal.proposal_id, 'Rejected by user');
+      const res = await changesApi.rejectProposal(proposal.proposal_id, 'Rejected by user', project?.path);
       setProposal(res);
       showToast('Proposal rejected', 'info');
     } catch (err: any) {
@@ -102,8 +110,9 @@ export const ChangesPage: React.FC = () => {
     if (!proposal) return;
     try {
       setActionLoading('execute');
-      const res = await changesApi.executeProposal(proposal.proposal_id);
+      const res = await changesApi.executeProposal(proposal.proposal_id, project?.path);
       setExecutionResult(res);
+      setProposal((prev) => (prev ? { ...prev, status: 'EXECUTED' } : null));
       showToast('Proposal applied and validated successfully', 'success');
     } catch (err: any) {
       showToast(err.message || 'Execution failed', 'error');
@@ -111,6 +120,10 @@ export const ChangesPage: React.FC = () => {
       setActionLoading(null);
     }
   };
+
+  const planFiles = plan?.affected_files || plan?.target_files || (plan?.target_file ? [plan.target_file] : []);
+  const planSymbols = plan?.affected_symbols || plan?.target_symbols || (plan?.target_symbol ? [plan.target_symbol] : []);
+  const riskLevel = typeof plan?.risk === 'string' ? plan.risk : plan?.risk_assessment?.level || 'LOW';
 
   return (
     <div className="page-wrapper">
@@ -163,26 +176,49 @@ export const ChangesPage: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Risk Level:</span>
-                <RiskBadge level={plan.risk_assessment.level} score={plan.risk_assessment.score} />
+                <RiskBadge level={riskLevel} score={plan.risk_assessment?.score} />
               </div>
 
-              <div>
-                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Target Files & Symbols:
-                </h4>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.25rem' }}>
-                  {plan.target_files.map((f, idx) => (
-                    <Badge key={idx} variant="primary"><code>{f}</code></Badge>
-                  ))}
-                  {plan.target_symbols.map((s, idx) => (
-                    <Badge key={idx} variant="cyan"><code>{s}</code></Badge>
-                  ))}
+              {(planFiles.length > 0 || planSymbols.length > 0) && (
+                <div>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Target Files & Symbols:
+                  </h4>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.25rem' }}>
+                    {planFiles.map((f, idx) => (
+                      <Badge key={idx} variant="primary"><code>{f}</code></Badge>
+                    ))}
+                    {planSymbols.map((s, idx) => (
+                      <Badge key={idx} variant="cyan"><code>{s}</code></Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.5, backgroundColor: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
-                {plan.plan}
-              </div>
+              {plan.reason && (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <strong>Reasoning:</strong> {plan.reason}
+                </div>
+              )}
+
+              {plan.recommended_order && plan.recommended_order.length > 0 && (
+                <div>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Recommended Steps:
+                  </h4>
+                  <ol style={{ fontSize: '0.85rem', paddingLeft: '1.2rem', marginTop: '0.25rem', color: 'var(--text-primary)' }}>
+                    {plan.recommended_order.map((step, idx) => (
+                      <li key={idx} style={{ marginBottom: '0.2rem' }}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              {plan.plan && (
+                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.5, backgroundColor: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                  {plan.plan}
+                </div>
+              )}
             </div>
           </Card>
         )}
@@ -195,18 +231,24 @@ export const ChangesPage: React.FC = () => {
             action={<StatusBadge status={proposal.status} />}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {proposal.diff && (
+              {proposal.change_summary && (
+                <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  <strong>Summary:</strong> {proposal.change_summary}
+                </div>
+              )}
+
+              {(proposal.patch || proposal.diff) && (
                 <div>
                   <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>
                     Proposed Diff:
                   </h4>
-                  <CodeBlock code={proposal.diff} language="diff" maxHeight="300px" />
+                  <CodeBlock code={proposal.patch || proposal.diff || ''} language="diff" maxHeight="300px" />
                 </div>
               )}
 
               {/* Proposal Actions */}
               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.75rem' }}>
-                {proposal.status === 'PROPOSED' && (
+                {(proposal.status === 'PENDING_APPROVAL' || proposal.status === 'PROPOSED') && (
                   <>
                     <Button
                       variant="danger"

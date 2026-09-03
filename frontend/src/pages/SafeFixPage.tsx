@@ -47,10 +47,11 @@ export const SafeFixPage: React.FC = () => {
       const proj = await projectsApi.get(projectId);
       const res = await changesApi.fixLoop(fixRequest.trim(), maxIterations, proj.path);
       setResult(res);
-      if (res.is_success) {
+      const isSuccess = res.status === 'SUCCESS' || res.is_success === true;
+      if (isSuccess) {
         showToast('Autonomous Fix Loop completed successfully!', 'success');
       } else {
-        showToast('Fix Loop could not converge cleanly. State reverted.', 'warning');
+        showToast(res.message || 'Fix Loop could not converge cleanly. State reverted.', 'warning');
       }
     } catch (err: any) {
       showToast(err.message || 'Fix Loop failed', 'error');
@@ -58,6 +59,13 @@ export const SafeFixPage: React.FC = () => {
       setIsRunning(false);
     }
   };
+
+  const isSuccess = result && (result.status === 'SUCCESS' || result.is_success === true);
+  const isFailed = result && !isSuccess;
+  const iterationsCount = result
+    ? result.current_iteration || (Array.isArray(result.iterations) ? result.iterations.length : result.iterations) || 1
+    : 1;
+  const patchDiff = result?.final_result?.diff || (Array.isArray(result?.iterations) && result.iterations.length > 0 ? result.iterations[result.iterations.length - 1].patch : undefined) || result?.diff;
 
   return (
     <div className="page-wrapper" style={{ maxWidth: '900px' }}>
@@ -120,9 +128,6 @@ export const SafeFixPage: React.FC = () => {
         <Card title="Safety Guardrails & Phase Pipeline">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             {phases.map((phase, idx) => {
-              const isCompleted = result && result.is_success;
-              const isFailed = result && !result.is_success;
-
               return (
                 <div
                   key={idx}
@@ -164,7 +169,7 @@ export const SafeFixPage: React.FC = () => {
                   <div>
                     {isRunning ? (
                       <Badge variant="warning">Running</Badge>
-                    ) : isCompleted ? (
+                    ) : isSuccess ? (
                       <Badge variant="success">Passed</Badge>
                     ) : isFailed ? (
                       <Badge variant="danger">Reverted</Badge>
@@ -181,9 +186,9 @@ export const SafeFixPage: React.FC = () => {
         {/* Result view */}
         {result && (
           <Card
-            title={result.is_success ? 'Fix Loop Succeeded' : 'Fix Loop Failed / Reverted'}
+            title={isSuccess ? 'Fix Loop Succeeded' : 'Fix Loop Failed / Reverted'}
             action={
-              result.is_success ? (
+              isSuccess ? (
                 <Badge variant="success">SUCCESS</Badge>
               ) : (
                 <Badge variant="danger">FAILED</Badge>
@@ -191,12 +196,20 @@ export const SafeFixPage: React.FC = () => {
             }
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.875rem' }}>
-              <div><strong>Iterations Run:</strong> {result.iterations ?? 1}</div>
-              <div><strong>Summary:</strong> {result.summary || (result.is_success ? 'All tests passed with patch.' : 'Tests failed, modifications rolled back safely.')}</div>
-              {result.diff && (
+              <div><strong>Iterations Run:</strong> {iterationsCount}</div>
+              <div><strong>Status:</strong> {result.status || (isSuccess ? 'SUCCESS' : 'FAILED')}</div>
+              <div>
+                <strong>Summary:</strong> {result.message || result.summary || (isSuccess ? 'All tests passed with patch.' : 'Tests failed or fix did not converge, modifications rolled back safely.')}
+              </div>
+              {result.errors && result.errors.length > 0 && (
+                <div style={{ color: 'var(--accent-rose)' }}>
+                  <strong>Errors:</strong> {result.errors.join(', ')}
+                </div>
+              )}
+              {patchDiff && (
                 <div>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Patch Diff:</h4>
-                  <CodeBlock code={result.diff} language="diff" />
+                  <CodeBlock code={patchDiff} language="diff" />
                 </div>
               )}
             </div>

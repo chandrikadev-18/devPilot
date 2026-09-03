@@ -10,6 +10,7 @@ from app.graph.queries import (
     get_callers,
     get_dependencies,
     get_dependents,
+    get_file_dependencies,
     get_impact,
 )
 from app.graph.store import GraphStore
@@ -238,3 +239,58 @@ def get_symbol_impact(
         indirect_dependents=impact_result.get("indirect_dependents", []),
         impacted_files=impact_result.get("impacted_files", []),
     )
+
+
+@router.get(
+    "/file-dependencies",
+    summary="Get File Dependencies",
+    description="Extracts module and file-level import relationships for a file.",
+)
+def get_file_dependencies_endpoint(
+    file_path: str = Query(..., description="Target file path"),
+    project_dir: str = Query(".", description="Target codebase directory"),
+    graph_path: Optional[str] = Query(None, description="Optional custom graph JSON file path"),
+):
+    graph = _get_graph(project_dir=project_dir, graph_path=graph_path)
+    return get_file_dependencies(graph, file_path=file_path)
+
+
+@router.post(
+    "/build",
+    response_model=GraphInfoResponse,
+    summary="Build Graph",
+    description="Builds or rebuilds the dependency graph for a directory.",
+)
+def build_graph_endpoint(
+    directory: str = Query(".", description="Target directory"),
+) -> GraphInfoResponse:
+    root = Path(directory).resolve()
+    if not root.exists():
+        raise HTTPException(status_code=400, detail=f"Directory does not exist: {directory}")
+    try:
+        graph = GraphBuilder().build(root)
+        try:
+            data_dir = root / "data"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            graph.save(data_dir / "graph.json")
+        except Exception:
+            pass
+        nodes = graph.get_nodes()
+        edges = graph.get_edges()
+        return GraphInfoResponse(
+            total_nodes=len(nodes),
+            files=len([n for n in nodes if n.node_type == NodeType.FILE]),
+            classes=len([n for n in nodes if n.node_type == NodeType.CLASS]),
+            functions=len([n for n in nodes if n.node_type == NodeType.FUNCTION]),
+            methods=len([n for n in nodes if n.node_type == NodeType.METHOD]),
+            modules=len([n for n in nodes if n.node_type == NodeType.MODULE]),
+            total_edges=len(edges),
+            calls=len([e for e in edges if e.edge_type == EdgeType.CALLS]),
+            imports=len([e for e in edges if e.edge_type == EdgeType.IMPORTS]),
+            contains=len([e for e in edges if e.edge_type == EdgeType.CONTAINS]),
+            defines=len([e for e in edges if e.edge_type == EdgeType.DEFINES]),
+            belongs_to=len([e for e in edges if e.edge_type == EdgeType.BELONGS_TO]),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build graph: {str(e)}")
+

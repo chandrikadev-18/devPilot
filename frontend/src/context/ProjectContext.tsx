@@ -14,11 +14,22 @@ interface ProjectContextType {
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
+const STORAGE_KEY = 'devpilot_active_project_id';
+
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [activeProject, setActiveProjectState] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const setActiveProject = (proj: Project | null) => {
+    setActiveProjectState(proj);
+    if (proj) {
+      localStorage.setItem(STORAGE_KEY, proj.project_id);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  };
 
   const refreshProjects = async () => {
     try {
@@ -26,11 +37,22 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setError(null);
       const res = await projectsApi.list();
       setProjects(res.projects);
+
+      const savedId = localStorage.getItem(STORAGE_KEY);
+      if (savedId) {
+        const found = res.projects.find((p) => p.project_id === savedId);
+        if (found) {
+          setActiveProjectState(found);
+          return;
+        }
+      }
+
       if (!activeProject && res.projects.length > 0) {
-        setActiveProject(res.projects[0]);
+        setActiveProjectState(res.projects[0]);
+        localStorage.setItem(STORAGE_KEY, res.projects[0].project_id);
       } else if (activeProject) {
         const updated = res.projects.find((p) => p.project_id === activeProject.project_id);
-        if (updated) setActiveProject(updated);
+        if (updated) setActiveProjectState(updated);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to fetch projects');
@@ -43,6 +65,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const found = projects.find((p) => p.project_id === projectId);
     if (found) {
       setActiveProject(found);
+    } else if (projectId) {
+      projectsApi.get(projectId).then((p) => {
+        setActiveProject(p);
+      }).catch(() => {});
     }
   };
 

@@ -5,14 +5,27 @@ export interface GraphInfoResponse {
   classes: number;
   functions: number;
   methods: number;
+  modules?: number;
   calls: number;
+  imports?: number;
+  contains?: number;
+  defines?: number;
+  belongs_to?: number;
 }
 
 export interface CallerInfo {
-  caller_name: string;
-  caller_file: string;
-  caller_line: number;
+  id?: string;
+  name?: string;
+  qualified_name?: string;
+  caller_name?: string;
+  caller_file?: string;
+  caller_line?: number;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
+  call_line?: number;
   call_type?: string;
+  target_symbol?: string;
 }
 
 export interface GraphCallersResponse {
@@ -22,10 +35,18 @@ export interface GraphCallersResponse {
 }
 
 export interface CalleeInfo {
-  callee_name: string;
+  id?: string;
+  name?: string;
+  qualified_name?: string;
+  callee_name?: string;
   callee_file?: string;
   callee_line?: number;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
+  call_line?: number;
   call_type?: string;
+  caller_symbol?: string;
 }
 
 export interface GraphCalleesResponse {
@@ -35,10 +56,19 @@ export interface GraphCalleesResponse {
 }
 
 export interface DependencyItem {
-  target: string;
+  id?: string;
+  name?: string;
+  qualified_name?: string;
+  target?: string;
   file?: string;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
+  call_line?: number;
   depth: number;
   type?: string;
+  caller?: string;
+  call_path?: string;
 }
 
 export interface GraphDependenciesResponse {
@@ -49,10 +79,18 @@ export interface GraphDependenciesResponse {
 }
 
 export interface DependentItem {
-  source: string;
+  id?: string;
+  name?: string;
+  source?: string;
   file?: string;
+  file_path?: string;
+  start_line?: number;
+  end_line?: number;
+  call_line?: number;
   depth: number;
   type?: string;
+  calls_target?: string;
+  dependent_path?: string;
 }
 
 export interface GraphDependentsResponse {
@@ -62,20 +100,38 @@ export interface GraphDependentsResponse {
   dependents: DependentItem[];
 }
 
+export interface GraphImpactItem {
+  id?: string;
+  name?: string;
+  file_path?: string;
+  node_type?: string;
+  start_line?: number;
+  end_line?: number;
+  call_line?: number;
+  calls_target?: string;
+  depth?: number;
+}
+
 export interface GraphImpactResponse {
   symbol: string;
   depth: number;
   analysis_type: string;
   total_impacted: number;
-  direct_callers: string[];
-  indirect_callers: string[];
+  direct_callers: (GraphImpactItem | string)[];
+  indirect_callers: (GraphImpactItem | string)[];
+  direct_dependents?: (GraphImpactItem | string)[];
+  indirect_dependents?: (GraphImpactItem | string)[];
   impacted_files: string[];
 }
 
 export interface GraphFileDependenciesResponse {
   file_path: string;
-  imports: string[];
+  imports_files?: string[];
+  imports_modules?: string[];
+  imports?: string[];
   imported_by: string[];
-  total_imports: number;
-  total_imported_by: number;
+  defined_symbols?: any[];
+  total_imports?: number;
+  total_imported_by?: number;
 }
+

@@ -331,6 +331,12 @@ def _run_git_intelligence(project_dir: str) -> GitChangeSummaryResponse:
     summary="Git-Aware Change Intelligence (GET)",
     description="Inspects working tree changes, symbols, blast radius, tests, and risk for uncommitted changes.",
 )
+@router.get(
+    "/summary",
+    response_model=GitChangeSummaryResponse,
+    summary="Git-Aware Change Intelligence Summary Alias (GET)",
+    description="Inspects working tree changes, symbols, blast radius, tests, and risk for uncommitted changes.",
+)
 def git_intelligence_get(
     project_dir: str = Query(".", description="Target project directory"),
 ) -> GitChangeSummaryResponse:

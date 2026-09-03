@@ -13,10 +13,13 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
     case 'COMPLETED':
     case 'SUCCESS':
     case 'APPROVED':
+    case 'APPLIED':
+    case 'EXECUTED':
     case 'OK':
       return <Badge variant="success">{status}</Badge>;
     case 'RUNNING':
     case 'PENDING':
+    case 'PENDING_APPROVAL':
     case 'PROPOSED':
     case 'DEGRADED':
       return <Badge variant="warning">{status}</Badge>;

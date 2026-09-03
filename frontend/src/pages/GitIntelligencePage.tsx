@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   Calendar,
   Clock,
+  ExternalLink,
   GitBranch,
   GitCommit,
   Search,
@@ -13,12 +14,14 @@ import { projectsApi } from '../api/projects';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
+import { CodeBlock } from '../components/common/CodeBlock';
 import { EmptyState } from '../components/common/EmptyState';
 import { Input } from '../components/common/Input';
+import { Modal } from '../components/common/Modal';
 import { Spinner } from '../components/common/Spinner';
 import { Tabs } from '../components/common/Tabs';
 import { useToast } from '../context/ToastContext';
-import { GitBlameResponse, GitHistoryResponse, GitLastChangeResponse } from '../types/git';
+import { GitBlameResponse, GitCommitDetail, GitHistoryResponse, GitLastChangeResponse } from '../types/git';
 import { Project } from '../types/projects';
 
 export const GitIntelligencePage: React.FC = () => {
@@ -30,6 +33,10 @@ export const GitIntelligencePage: React.FC = () => {
   const [historyData, setHistoryData] = useState<GitHistoryResponse | null>(null);
   const [lastChangeData, setLastChangeData] = useState<GitLastChangeResponse | null>(null);
   const [blameData, setBlameData] = useState<GitBlameResponse | null>(null);
+
+  // Commit Details Modal State
+  const [selectedCommitDetail, setSelectedCommitDetail] = useState<GitCommitDetail | null>(null);
+  const [isLoadingCommit, setIsLoadingCommit] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isQuerying, setIsQuerying] = useState(false);
@@ -45,29 +52,52 @@ export const GitIntelligencePage: React.FC = () => {
       .finally(() => setIsLoading(false));
   }, [projectId]);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!symbolQuery.trim() || !project) return;
-
+  const runQueryForTab = async (tab: string, sym: string) => {
+    if (!sym.trim() || !project) return;
     try {
       setIsQuerying(true);
-      const sym = symbolQuery.trim();
+      const s = sym.trim();
       const pPath = project.path;
 
-      if (activeTab === 'history') {
-        const res = await gitApi.getHistory(sym, 10, pPath);
+      if (tab === 'history') {
+        const res = await gitApi.getHistory(s, 15, pPath);
         setHistoryData(res);
-      } else if (activeTab === 'lastChange') {
-        const res = await gitApi.getLastChange(sym, pPath);
+      } else if (tab === 'lastChange') {
+        const res = await gitApi.getLastChange(s, pPath);
         setLastChangeData(res);
-      } else if (activeTab === 'blame') {
-        const res = await gitApi.getBlame(sym, undefined, undefined, pPath);
+      } else if (tab === 'blame') {
+        const res = await gitApi.getBlame(s, undefined, undefined, pPath);
         setBlameData(res);
       }
     } catch (err: any) {
       showToast(err.message || 'Git inspection failed', 'error');
     } finally {
       setIsQuerying(false);
+    }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    runQueryForTab(activeTab, symbolQuery);
+  };
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    if (symbolQuery.trim()) {
+      runQueryForTab(tab, symbolQuery);
+    }
+  };
+
+  const inspectCommit = async (commitHash: string) => {
+    if (!commitHash || !project) return;
+    try {
+      setIsLoadingCommit(true);
+      const detail = await gitApi.getCommit(commitHash, project.path);
+      setSelectedCommitDetail(detail);
+    } catch (err: any) {
+      showToast(err.message || `Failed to fetch commit ${commitHash}`, 'error');
+    } finally {
+      setIsLoadingCommit(false);
     }
   };
 
@@ -120,7 +150,7 @@ export const GitIntelligencePage: React.FC = () => {
               { id: 'blame', label: 'Line Blame', icon: <User size={15} /> },
             ]}
             activeTab={activeTab}
-            onChange={(tab) => setActiveTab(tab)}
+            onChange={handleTabChange}
           />
 
           {/* Results view */}
@@ -131,31 +161,51 @@ export const GitIntelligencePage: React.FC = () => {
               historyData ? (
                 <div>
                   <div style={{ marginBottom: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600 }}>History for <code>{historyData.symbol_or_file}</code>:</span>
+                    <span style={{ fontWeight: 600 }}>History for <code>{historyData.symbol || historyData.symbol_or_file || symbolQuery}</code>:</span>
                     <Badge variant="primary">{historyData.total_commits} commits</Badge>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {historyData.commits.map((c, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          padding: '0.75rem 1rem',
-                          backgroundColor: 'rgba(255, 255, 255, 0.02)',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border-subtle)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                            {c.message}
-                          </span>
-                          <code style={{ fontSize: '0.75rem', color: 'var(--accent-blue)' }}>{c.short_hash}</code>
+                    {historyData.commits.map((c, idx) => {
+                      const author = c.author_name || c.author || 'Unknown';
+                      const dateStr = c.date ? new Date(c.date).toLocaleString() : '';
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: '0.75rem 1rem',
+                            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                              {c.message}
+                            </span>
+                            <button
+                              onClick={() => inspectCommit(c.commit_hash || c.short_hash)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                fontSize: '0.75rem',
+                                color: 'var(--accent-blue)',
+                                padding: '0.15rem 0.45rem',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                              }}
+                              title="Click to inspect commit details"
+                            >
+                              <code>{c.short_hash}</code>
+                              <ExternalLink size={11} />
+                            </button>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                            Author: {author} {dateStr && `• ${dateStr}`}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                          Author: {c.author} • {new Date(c.date).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -164,13 +214,42 @@ export const GitIntelligencePage: React.FC = () => {
             ) : activeTab === 'lastChange' ? (
               lastChangeData ? (
                 <div style={{ padding: '1rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  <h4 style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
-                    {lastChangeData.commit_message}
-                  </h4>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    <div><strong>Author:</strong> {lastChangeData.author_name} ({lastChangeData.author_email})</div>
-                    <div><strong>Date:</strong> {new Date(lastChangeData.authored_date).toLocaleString()}</div>
-                    <div><strong>Commit:</strong> <code>{lastChangeData.short_hash}</code></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <h4 style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
+                      {lastChangeData.message || lastChangeData.commit_message || 'Commit Details'}
+                    </h4>
+                    {(lastChangeData.commit_hash || lastChangeData.short_hash) && (
+                      <button
+                        onClick={() => inspectCommit(lastChangeData.commit_hash || lastChangeData.short_hash)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          fontSize: '0.75rem',
+                          color: 'var(--accent-blue)',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: 'var(--radius-sm)',
+                          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        }}
+                      >
+                        <code>{lastChangeData.short_hash || (lastChangeData.commit_hash ? lastChangeData.commit_hash.substring(0, 7) : 'HEAD')}</code>
+                        <ExternalLink size={11} />
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.5rem' }}>
+                    <div>
+                      <strong>Author:</strong> {lastChangeData.author || lastChangeData.author_name || 'Unknown'}
+                      {lastChangeData.author_email && ` (${lastChangeData.author_email})`}
+                    </div>
+                    <div>
+                      <strong>Date:</strong> {lastChangeData.date || lastChangeData.authored_date ? new Date(lastChangeData.date || lastChangeData.authored_date || '').toLocaleString() : 'N/A'}
+                    </div>
+                    {lastChangeData.file && (
+                      <div>
+                        <strong>File:</strong> <code>{lastChangeData.file}</code>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -179,8 +258,11 @@ export const GitIntelligencePage: React.FC = () => {
             ) : activeTab === 'blame' ? (
               blameData ? (
                 <div>
-                  <div style={{ marginBottom: '0.75rem', fontWeight: 600 }}>
-                    Blame for <code>{blameData.symbol_or_file}</code> ({blameData.total_lines} lines):
+                  <div style={{ marginBottom: '0.75rem', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Blame for <code>{blameData.symbol || blameData.symbol_or_file || symbolQuery}</code> ({blameData.total_lines} lines):</span>
+                    {blameData.primary_contributor && (
+                      <Badge variant="cyan">Top Contributor: {blameData.primary_contributor}</Badge>
+                    )}
                   </div>
                   <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
@@ -191,13 +273,18 @@ export const GitIntelligencePage: React.FC = () => {
                               {line.line_number}
                             </td>
                             <td style={{ padding: '0.2rem 0.5rem', color: 'var(--accent-cyan)', width: '80px' }}>
-                              {line.short_hash}
+                              <button
+                                onClick={() => inspectCommit(line.commit_hash || line.short_hash)}
+                                style={{ color: 'var(--accent-cyan)', textDecoration: 'underline', cursor: 'pointer' }}
+                              >
+                                {line.short_hash}
+                              </button>
                             </td>
-                            <td style={{ padding: '0.2rem 0.5rem', color: 'var(--text-secondary)', width: '120px' }}>
-                              {line.author_name}
+                            <td style={{ padding: '0.2rem 0.5rem', color: 'var(--text-secondary)', width: '130px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {line.author || line.author_name || 'Unknown'}
                             </td>
                             <td style={{ padding: '0.2rem 0.5rem', color: 'var(--text-primary)' }}>
-                              {line.line_content}
+                              {line.content ?? line.line_content ?? ''}
                             </td>
                           </tr>
                         ))}
@@ -212,6 +299,34 @@ export const GitIntelligencePage: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      {/* Commit Detail Modal */}
+      {selectedCommitDetail && (
+        <Modal
+          isOpen={!!selectedCommitDetail}
+          onClose={() => setSelectedCommitDetail(null)}
+          title={`Commit: ${selectedCommitDetail.short_hash || selectedCommitDetail.commit_hash.substring(0, 7)}`}
+          maxWidth="700px"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.875rem' }}>
+            <div><strong>Message:</strong> {selectedCommitDetail.message}</div>
+            <div><strong>Author:</strong> {selectedCommitDetail.author} &lt;{selectedCommitDetail.author_email}&gt;</div>
+            <div><strong>Date:</strong> {new Date(selectedCommitDetail.date).toLocaleString()}</div>
+            <div><strong>SHA:</strong> <code>{selectedCommitDetail.commit_hash}</code></div>
+            <div><strong>Changed Files:</strong> {selectedCommitDetail.files_changed?.length || 0}</div>
+            {(selectedCommitDetail.diff_patch || selectedCommitDetail.diff_summary) && (
+              <div>
+                <strong>Diff Preview:</strong>
+                <CodeBlock
+                  code={selectedCommitDetail.diff_patch || selectedCommitDetail.diff_summary || ''}
+                  language="diff"
+                  maxHeight="300px"
+                />
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

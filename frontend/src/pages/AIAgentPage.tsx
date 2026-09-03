@@ -5,6 +5,7 @@ import {
   Bot,
   CheckCircle2,
   FileCode,
+  RotateCcw,
   Send,
   Sparkles,
   Terminal,
@@ -39,6 +40,8 @@ export const AIAgentPage: React.FC = () => {
     },
   ]);
   const [inputQuery, setInputQuery] = useState('');
+  const [provider, setProvider] = useState<string>('groq');
+  const [model, setModel] = useState<string>('llama-3.3-70b-versatile');
   const [isAsking, setIsAsking] = useState(false);
   const { showToast } = useToast();
 
@@ -58,7 +61,11 @@ export const AIAgentPage: React.FC = () => {
     setIsAsking(true);
 
     try {
-      const res = await projectsApi.askAgent(projectId, { question: userMessage.text });
+      const res = await projectsApi.askAgent(projectId, {
+        question: userMessage.text,
+        provider: provider || undefined,
+        model: model || undefined,
+      });
 
       const agentMessage: ChatMessage = {
         id: Math.random().toString(36).substring(2, 9),
@@ -84,6 +91,18 @@ export const AIAgentPage: React.FC = () => {
     }
   };
 
+  const handleClearHistory = () => {
+    setMessages([
+      {
+        id: 'welcome',
+        sender: 'agent',
+        text: 'Hello! I am DevPilot AI Agent. I can reason across your codebase AST symbols, semantic code embeddings, Git history, and static dependency graph. Ask me anything!',
+        timestamp: new Date(),
+      },
+    ]);
+    showToast('Conversation cleared', 'info');
+  };
+
   const samplePrompts = [
     'What functions call hash_password and what could break if I change it?',
     'What are the key dependencies of auth.py?',
@@ -98,6 +117,16 @@ export const AIAgentPage: React.FC = () => {
           <p className="page-subtitle">
             Autonomous multi-turn reasoning with validated tool use and verified source citations.
           </p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearHistory}
+            leftIcon={<RotateCcw size={14} />}
+          >
+            Clear Chat
+          </Button>
         </div>
       </div>
 
@@ -128,7 +157,7 @@ export const AIAgentPage: React.FC = () => {
       </div>
 
       {/* Chat Messages Container */}
-      <Card padding="md" style={{ minHeight: '480px', display: 'flex', flexDirection: 'column' }}>
+      <Card padding="md" style={{ minHeight: '520px', display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '0.5rem' }}>
           {messages.map((msg) => (
             <div
@@ -138,7 +167,7 @@ export const AIAgentPage: React.FC = () => {
                 gap: '0.85rem',
                 alignItems: 'flex-start',
                 alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                maxWidth: '85%',
+                maxWidth: '90%',
               }}
             >
               <div

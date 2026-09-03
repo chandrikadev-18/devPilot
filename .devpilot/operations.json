@@ -1732,5 +1732,311 @@
       "duration_ms": 274.72
     },
     "error": null
+  },
+  "op_scan_20260902_050722_444082": {
+    "operation_id": "op_scan_20260902_050722_444082",
+    "project_id": "proj_delete_target_55a868",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T05:07:22.402807+00:00",
+    "completed_at": "2026-09-02T05:07:22.446716+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-176/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 7.81
+    },
+    "error": null
+  },
+  "op_scan_20260902_051831_3720e2": {
+    "operation_id": "op_scan_20260902_051831_3720e2",
+    "project_id": "proj_delete_target_55a868",
+    "operation_type": "scan",
+    "status": "FAILED",
+    "started_at": "2026-09-02T05:18:31.869206+00:00",
+    "completed_at": "2026-09-02T05:18:31.925723+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-176/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 15.09
+    },
+    "error": "[WinError 5] Access is denied: 'D:\\\\Devpilot\\\\.devpilot\\\\operations.tmp' -> 'D:\\\\Devpilot\\\\.devpilot\\\\operations.json'"
+  },
+  "op_scan_20260902_054817_2da0f1": {
+    "operation_id": "op_scan_20260902_054817_2da0f1",
+    "project_id": "proj_delete_target_55a868",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T05:48:17.966005+00:00",
+    "completed_at": "2026-09-02T05:48:18.018336+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-176/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 25.12
+    },
+    "error": null
+  },
+  "op_scan_20260902_102423_258408": {
+    "operation_id": "op_scan_20260902_102423_258408",
+    "project_id": "proj_scan_graph_target_d2cca6",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T10:24:23.577117+00:00",
+    "completed_at": "2026-09-02T10:24:23.586129+00:00",
+    "result": {
+      "project_name": "Scan Graph Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-177/test_api_project_scan_and_grap0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 2.03
+    },
+    "error": null
+  },
+  "op_graph_build_20260902_102423_694bfe": {
+    "operation_id": "op_graph_build_20260902_102423_694bfe",
+    "project_id": "proj_scan_graph_target_d2cca6",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T10:24:23.601444+00:00",
+    "completed_at": "2026-09-02T10:24:23.619295+00:00",
+    "result": {
+      "project_id": "proj_scan_graph_target_d2cca6",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 9.66
+    },
+    "error": null
+  },
+  "op_review_20260902_102424_81e3ce": {
+    "operation_id": "op_review_20260902_102424_81e3ce",
+    "project_id": "proj_review_target_6e0aaf",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T10:24:24.310727+00:00",
+    "completed_at": "2026-09-02T10:24:24.633837+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 315.77
+    },
+    "error": null
+  },
+  "op_scan_20260902_102426_185d60": {
+    "operation_id": "op_scan_20260902_102426_185d60",
+    "project_id": "proj_cli_test_project_301fd3",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T10:24:26.192120+00:00",
+    "completed_at": "2026-09-02T10:24:26.200120+00:00",
+    "result": {
+      "project_name": "CLI Test Project",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-177/test_cli_project_add_and_info0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 1.51
+    },
+    "error": null
+  },
+  "op_graph_build_20260902_102426_2b85ab": {
+    "operation_id": "op_graph_build_20260902_102426_2b85ab",
+    "project_id": "proj_cli_test_project_301fd3",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T10:24:26.209134+00:00",
+    "completed_at": "2026-09-02T10:24:26.224123+00:00",
+    "result": {
+      "project_id": "proj_cli_test_project_301fd3",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 8.2
+    },
+    "error": null
+  },
+  "op_review_20260902_102426_8fc284": {
+    "operation_id": "op_review_20260902_102426_8fc284",
+    "project_id": "proj_cli_test_project_301fd3",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-09-02T10:24:26.232127+00:00",
+    "completed_at": "2026-09-02T10:24:26.551538+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 314.14
+    },
+    "error": null
+  },
+  "op_scan_20260903_150819_2fa967": {
+    "operation_id": "op_scan_20260903_150819_2fa967",
+    "project_id": "proj_delete_target_401db4",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-03T15:08:19.255047+00:00",
+    "completed_at": "2026-09-03T15:08:19.309432+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-177/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 22.12
+    },
+    "error": null
+  },
+  "op_scan_20260903_151427_9f5e2f": {
+    "operation_id": "op_scan_20260903_151427_9f5e2f",
+    "project_id": "proj_delete_target_401db4",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-03T15:14:27.086629+00:00",
+    "completed_at": "2026-09-03T15:14:27.138727+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-177/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 21.59
+    },
+    "error": null
+  },
+  "op_scan_20260903_151427_35ff7a": {
+    "operation_id": "op_scan_20260903_151427_35ff7a",
+    "project_id": "proj_delete_target_401db4",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-03T15:14:27.125708+00:00",
+    "completed_at": "2026-09-03T15:14:27.169955+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-177/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 15.64
+    },
+    "error": null
   }
 }

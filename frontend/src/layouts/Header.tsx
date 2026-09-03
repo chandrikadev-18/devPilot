@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Activity, FolderCode, Plus, RefreshCw } from 'lucide-react';
 import { healthApi } from '../api/health';
 import { Button } from '../components/common/Button';
@@ -10,6 +10,16 @@ export const Header: React.FC = () => {
   const { projects, activeProject, selectProjectById, refreshProjects, isLoading } = useProject();
   const [health, setHealth] = useState<DetailedHealthResponse | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const handleProjectChange = (newProjectId: string) => {
+    selectProjectById(newProjectId);
+    const match = location.pathname.match(/^\/projects\/([^\/]+)(\/.*)?$/);
+    if (match) {
+      const subpath = match[2] || '';
+      navigate(`/projects/${newProjectId}${subpath}`);
+    }
+  };
 
   const fetchHealth = async () => {
     try {
@@ -54,7 +64,7 @@ export const Header: React.FC = () => {
         {projects.length > 0 ? (
           <select
             value={activeProject?.project_id || ''}
-            onChange={(e) => selectProjectById(e.target.value)}
+            onChange={(e) => handleProjectChange(e.target.value)}
             style={{
               backgroundColor: 'var(--bg-input)',
               border: '1px solid var(--border-subtle)',

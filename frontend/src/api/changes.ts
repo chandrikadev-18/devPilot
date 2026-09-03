@@ -26,22 +26,27 @@ export const changesApi = {
     });
   },
 
-  approveProposal: async (proposalId: string): Promise<ChangeProposal> => {
+  approveProposal: async (proposalId: string, projectDir?: string, force: boolean = true): Promise<ChangeProposal> => {
     return apiClient<ChangeProposal>(`/api/changes/proposals/${proposalId}/approve`, {
       method: 'POST',
+      body: JSON.stringify({ project_dir: projectDir, force }),
+      params: { project_dir: projectDir },
     });
   },
 
-  rejectProposal: async (proposalId: string, reason?: string): Promise<ChangeProposal> => {
+  rejectProposal: async (proposalId: string, reason?: string, projectDir?: string): Promise<ChangeProposal> => {
     return apiClient<ChangeProposal>(`/api/changes/proposals/${proposalId}/reject`, {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason, project_dir: projectDir }),
+      params: { project_dir: projectDir },
     });
   },
 
-  executeProposal: async (proposalId: string): Promise<any> => {
+  executeProposal: async (proposalId: string, projectDir?: string): Promise<any> => {
     return apiClient<any>(`/api/changes/proposals/${proposalId}/execute`, {
       method: 'POST',
+      body: JSON.stringify({ project_dir: projectDir }),
+      params: { project_dir: projectDir },
     });
   },
 
@@ -66,8 +71,9 @@ export const changesApi = {
   },
 
   getSummary: async (baseBranch?: string, projectDir?: string): Promise<any> => {
-    return apiClient<any>('/api/changes/summary', {
+    return apiClient<any>('/api/changes/git-intelligence', {
       params: { base_branch: baseBranch, project_dir: projectDir },
     });
   },
 };
+
