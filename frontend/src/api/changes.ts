@@ -15,7 +15,7 @@ export const changesApi = {
   plan: async (request: string, projectDir?: string): Promise<PlanChangeResponse> => {
     return apiClient<PlanChangeResponse>('/api/changes/plan', {
       method: 'POST',
-      body: JSON.stringify({ request, project_dir: projectDir }),
+      body: JSON.stringify({ change_request: request, project_dir: projectDir }),
     });
   },
 

@@ -8,7 +8,7 @@ import { Spinner } from '../components/common/Spinner';
 import { DetailedHealthResponse } from '../types/health';
 
 export const SettingsPage: React.FC = () => {
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+  const apiUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
   const [health, setHealth] = useState<DetailedHealthResponse | null>(null);
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [isPinging, setIsPinging] = useState(false);

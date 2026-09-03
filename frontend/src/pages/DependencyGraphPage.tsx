@@ -71,15 +71,20 @@ export const DependencyGraphPage: React.FC = () => {
     try {
       setIsBuilding(true);
       const res = await projectsApi.buildGraph(project.project_id);
-      setGraphInfo({
-        total_nodes: res.total_nodes,
-        total_edges: res.total_edges,
-        files: res.files,
-        classes: res.classes,
-        functions: res.functions,
-        methods: 0,
-        calls: 0,
-      });
+      try {
+        const fullInfo = await graphApi.getInfo(project.path);
+        setGraphInfo(fullInfo);
+      } catch {
+        setGraphInfo({
+          total_nodes: res.total_nodes,
+          total_edges: res.total_edges,
+          files: res.files,
+          classes: res.classes,
+          functions: res.functions,
+          methods: 0,
+          calls: 0,
+        });
+      }
       showToast('Graph built successfully', 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to build graph', 'error');
