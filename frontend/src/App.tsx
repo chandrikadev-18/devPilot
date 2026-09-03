@@ -17,6 +17,7 @@ import { ProjectNewPage } from './pages/ProjectNewPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { SafeFixPage } from './pages/SafeFixPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { TaskWorkspacePage } from './pages/TaskWorkspacePage';
 
 export const App: React.FC = () => {
   return (
@@ -27,9 +28,11 @@ export const App: React.FC = () => {
             <Route element={<AppLayout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/tasks" element={<TaskWorkspacePage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/new" element={<ProjectNewPage />} />
               <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+              <Route path="/projects/:projectId/tasks" element={<TaskWorkspacePage />} />
               <Route path="/projects/:projectId/explorer" element={<CodeExplorerPage />} />
               <Route path="/projects/:projectId/graph" element={<DependencyGraphPage />} />
               <Route path="/projects/:projectId/agent" element={<AIAgentPage />} />

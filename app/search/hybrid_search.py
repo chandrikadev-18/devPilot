@@ -16,6 +16,20 @@ from app.search.semantic_search import SearchResult, SemanticSearcher
 from app.vector_store.qdrant_store import ConfigurationMismatchError, ValidationError, VectorStoreError
 
 
+def _stem_token(token: str) -> str:
+    """Stems English words for code identifier matching (e.g. scanning -> scan, builder -> build)."""
+    t = token.lower()
+    for suffix in ("ing", "ions", "ion", "tion", "tions", "ment", "ments", "ers", "er", "ies", "ed", "es", "s"):
+        if t.endswith(suffix) and len(t) - len(suffix) >= 3:
+            stem = t[:-len(suffix)]
+            if stem.endswith("i") and len(stem) >= 4:
+                stem = stem[:-1]
+            if len(stem) >= 3 and stem[-1] == stem[-2] and stem[-1] in "bdfgmnprtz":
+                stem = stem[:-1]
+            return stem
+    return t
+
+
 def _extract_query_keywords(query: str) -> List[str]:
     """Extracts meaningful alphanumeric search tokens, discarding common stop words."""
     stop_words = {
@@ -23,7 +37,7 @@ def _extract_query_keywords(query: str) -> List[str]:
         "which", "responsible", "for", "the", "a", "an", "in", "of", "and",
         "do", "we", "handle", "show", "me", "how", "does", "get", "what",
         "implementation", "implemented", "part", "functionality", "validate",
-        "validated", "connections", "connection",
+        "validated", "connections", "connection", "tell", "explain",
     }
     raw_tokens = re.findall(r"[a-zA-Z0-9_]+", query.lower())
     meaningful = [t for t in raw_tokens if t not in stop_words and len(t) > 1]
@@ -159,24 +173,33 @@ class HybridCodeSearchEngine:
         sym_lower = symbol_name.lower()
         file_lower = file_path.lower()
         src_lower = source[:500].lower()
+        sym_parts = set(re.findall(r"[a-z0-9]+", sym_lower))
 
         score = 0.40  # base
         matches = 0
 
         for kw in keywords:
-            kw_stem = kw.rstrip("sed")
-            if kw in sym_lower or (len(kw_stem) >= 3 and kw_stem in sym_lower):
+            kw_stem = _stem_token(kw)
+            matched_kw = False
+
+            if kw in sym_lower or kw_stem in sym_lower or any(p.startswith(kw_stem) or kw_stem.startswith(p) for p in sym_parts if len(p) >= 3):
                 score += 0.25
                 matches += 1
-            elif kw in file_lower or (len(kw_stem) >= 3 and kw_stem in file_lower):
-                score += 0.15
+                matched_kw = True
+            elif kw in file_lower or kw_stem in file_lower:
+                score += 0.18
                 matches += 1
-            elif kw in src_lower:
+                matched_kw = True
+            elif kw in src_lower or kw_stem in src_lower:
                 score += 0.08
                 matches += 1
+                matched_kw = True
 
         if matches == 0:
             return 0.0
+
+        if matches >= 2:
+            score += 0.15  # compound multi-token match bonus
 
         return min(0.95, score)
 
@@ -232,7 +255,7 @@ class HybridCodeSearchEngine:
 
         # If vector results are few or empty, supplement with AST scan
         if len(candidate_items) < top_k:
-            ast_candidates = self._fallback_ast_scan(q_clean, top_k=top_k * 2)
+            ast_candidates = self._fallback_ast_scan(q_clean, top_k=top_k * 3)
             for ac in ast_candidates:
                 k = f"{ac['file']}:{ac['symbol']}"
                 if k not in candidate_items:
@@ -251,15 +274,23 @@ class HybridCodeSearchEngine:
             exact_sym_boost = 0.0
             file_boost = 0.0
             graph_boost = 0.0
+            matched_kws = 0
 
             sym_lower = sym.lower()
             file_lower = file_p.lower()
+            sym_parts = set(re.findall(r"[a-z0-9]+", sym_lower))
 
             for kw in keywords:
-                if kw in sym_lower:
-                    exact_sym_boost = max(exact_sym_boost, 0.15)
-                if kw in file_lower:
-                    file_boost = max(file_boost, 0.10)
+                kw_stem = _stem_token(kw)
+                if kw in sym_lower or kw_stem in sym_lower or any(p.startswith(kw_stem) or kw_stem.startswith(p) for p in sym_parts if len(p) >= 3):
+                    exact_sym_boost += 0.15
+                    matched_kws += 1
+                if kw in file_lower or kw_stem in file_lower:
+                    file_boost += 0.10
+                    matched_kws += 1
+
+            if matched_kws >= 2:
+                exact_sym_boost += 0.15  # multi-token co-occurrence bonus
 
             # Check graph connectivity
             if active_graph:

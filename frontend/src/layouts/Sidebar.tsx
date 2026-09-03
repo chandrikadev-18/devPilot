@@ -22,6 +22,7 @@ export const Sidebar: React.FC = () => {
 
   const navItems = [
     { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+    { to: '/tasks', label: 'Task Workspace', icon: <Wrench size={18} /> },
     { to: '/projects', label: 'Projects', icon: <Compass size={18} /> },
     {
       to: projectId ? `/projects/${projectId}/explorer` : '/projects',

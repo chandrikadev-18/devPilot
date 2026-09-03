@@ -2643,6 +2643,252 @@ def run_project_delete(project_id: str, hard: bool = False, as_json: bool = Fals
         sys.exit(1)
 
 
+# ==============================================================================
+# Task Engineering CLI Runners (v3.4)
+# ==============================================================================
+
+def _get_task_engine(project_dir: str = ".") -> Any:
+    from app.tasks.engine import EngineeringTaskEngine
+    return EngineeringTaskEngine(project_root=Path(project_dir).resolve())
+
+
+def _get_task_store(project_dir: str = ".") -> Any:
+    from app.tasks.store import TaskStore
+    return TaskStore(project_root=Path(project_dir).resolve())
+
+
+def run_task(
+    request: str,
+    description: str = "",
+    auto_approve: bool = False,
+    force: bool = False,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """Executes the complete autonomous issue-to-PR workflow."""
+    try:
+        engine = _get_task_engine(project_dir)
+        task = engine.create_task(title=request, description=description)
+        task = engine.analyze_task(task.task_id)
+        task = engine.plan_task(task.task_id)
+
+        if auto_approve:
+            task = engine.approve_task(task.task_id, reason="Auto-approved via CLI", force=force)
+            task = engine.execute_task(task.task_id)
+
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+
+        print("DevPilot v3.4 — Autonomous Issue-to-PR Task")
+        print("──────────────────────────────────────────")
+        print(f"Task ID:     {task.task_id}")
+        print(f"Title:       {task.title}")
+        print(f"Type:        {task.task_type.upper()} | Priority: {task.priority} | Risk: {task.risk}")
+        print(f"Status:      {task.status}")
+
+        if task.root_cause:
+            print(f"\nRoot Cause ({task.root_cause.confidence}):")
+            print(f"  • {task.root_cause.summary}")
+
+        if task.implementation_plan:
+            print(f"\nImplementation Plan ({len(task.implementation_plan)} steps):")
+            for step in task.implementation_plan:
+                print(f"  {step.step_number}. [{step.file}] {step.operation} ({step.symbol})")
+
+        if task.status == "WAITING_APPROVAL":
+            print(f"\n[!] Task is waiting for human approval. Run:")
+            print(f"    python -m app.main task-approve {task.task_id}")
+        elif task.status == "COMPLETED":
+            print(f"\n✓ Task successfully implemented and verified!")
+            if task.pr_summary:
+                print(f"\n{task.pr_summary}")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error in task workflow: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_create(
+    title: str,
+    description: str = "",
+    task_type: Optional[str] = None,
+    priority: Optional[str] = None,
+    project_dir: str = ".",
+    as_json: bool = False,
+):
+    """Creates a new engineering task."""
+    try:
+        engine = _get_task_engine(project_dir)
+        task = engine.create_task(title=title, description=description, task_type=task_type, priority=priority)
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+        print(f"Task created: {task.task_id} [{task.status}]")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error creating task: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_status(task_id: str, project_dir: str = ".", as_json: bool = False):
+    """Displays task status and metadata."""
+    try:
+        store = _get_task_store(project_dir)
+        task = store.get(task_id)
+        if not task:
+            raise ValueError(f"Task '{task_id}' not found.")
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+        print("DevPilot Task Details")
+        print("─────────────────────")
+        print(f"Task ID:   {task.task_id}")
+        print(f"Title:     {task.title}")
+        print(f"Status:    {task.status}")
+        print(f"Type:      {task.task_type} | Priority: {task.priority} | Risk: {task.risk}")
+        if task.error_message:
+            print(f"Error:     {task.error_message}")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error reading task: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_analyze(task_id: str, project_dir: str = ".", as_json: bool = False):
+    """Analyzes task and discovers root cause."""
+    try:
+        engine = _get_task_engine(project_dir)
+        task = engine.analyze_task(task_id)
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+        print(f"Task '{task_id}' analyzed [{task.status}].")
+        if task.root_cause:
+            print(f"Root Cause: {task.root_cause.summary}")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error analyzing task: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_plan(task_id: str, project_dir: str = ".", as_json: bool = False):
+    """Generates plan and patch proposal for task."""
+    try:
+        engine = _get_task_engine(project_dir)
+        task = engine.plan_task(task_id)
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+        print(f"Task '{task_id}' planned [{task.status}]. Waiting for approval.")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error planning task: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_approve(task_id: str, reason: Optional[str] = None, force: bool = False, project_dir: str = ".", as_json: bool = False):
+    """Approves a planned task."""
+    try:
+        engine = _get_task_engine(project_dir)
+        task = engine.approve_task(task_id, reason=reason, force=force)
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+        print(f"Task '{task_id}' APPROVED [{task.status}]. Ready for execution.")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error approving task: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_reject(task_id: str, reason: Optional[str] = None, project_dir: str = ".", as_json: bool = False):
+    """Rejects a task."""
+    try:
+        engine = _get_task_engine(project_dir)
+        task = engine.reject_task(task_id, reason=reason)
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+        print(f"Task '{task_id}' REJECTED [{task.status}].")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error rejecting task: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_execute(task_id: str, no_tests: bool = False, project_dir: str = ".", as_json: bool = False):
+    """Executes an approved task."""
+    try:
+        engine = _get_task_engine(project_dir)
+        task = engine.execute_task(task_id, run_tests=not no_tests)
+        if as_json:
+            print(json.dumps(task.to_dict(), indent=2))
+            return
+        print(f"Task '{task_id}' executed [{task.status}].")
+        if task.pr_summary:
+            print(f"\n{task.pr_summary}")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error executing task: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_diff(task_id: str, project_dir: str = ".", as_json: bool = False):
+    """Displays diff for task."""
+    try:
+        store = _get_task_store(project_dir)
+        task = store.get(task_id)
+        if not task:
+            raise ValueError(f"Task '{task_id}' not found.")
+        if as_json:
+            print(json.dumps({"task_id": task_id, "patch": task.patch or ""}, indent=2))
+            return
+        print(task.patch or "(No patch available)")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error viewing task diff: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def run_task_report(task_id: str, project_dir: str = ".", as_json: bool = False):
+    """Displays PR-ready summary report for task."""
+    try:
+        store = _get_task_store(project_dir)
+        task = store.get(task_id)
+        if not task:
+            raise ValueError(f"Task '{task_id}' not found.")
+        if as_json:
+            print(json.dumps({"task_id": task_id, "pr_summary": task.pr_summary or ""}, indent=2))
+            return
+        print(task.pr_summary or "(No PR summary generated yet)")
+    except Exception as e:
+        if as_json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error reading task report: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+
 def main():
 
 
@@ -2693,6 +2939,16 @@ def main():
         "fix",
         "fix-loop",
         "project",
+        "task",
+        "task-create",
+        "task-status",
+        "task-analyze",
+        "task-plan",
+        "task-approve",
+        "task-reject",
+        "task-execute",
+        "task-diff",
+        "task-report",
         "-h",
         "--help",
     ]
@@ -3035,6 +3291,76 @@ def main():
     proj_del_p.add_argument("--hard", action="store_true", help="Permanently remove project registration")
     proj_del_p.add_argument("--json", action="store_true", help="Output in JSON format")
 
+    # task subcommand (v3.4 Autonomous Issue-to-PR workflow)
+    task_p = subparsers.add_parser("task", help="Execute complete autonomous issue-to-PR task workflow")
+    task_p.add_argument("request", type=str, help="Developer issue or task request")
+    task_p.add_argument("--description", type=str, default="", help="Detailed description or context")
+    task_p.add_argument("--auto-approve", action="store_true", help="Auto-approve and execute if safe")
+    task_p.add_argument("--force", action="store_true", help="Force execution of high risk changes")
+    task_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_p.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # task-create
+    task_create_p = subparsers.add_parser("task-create", help="Create a new engineering task")
+    task_create_p.add_argument("title", type=str, help="Task title")
+    task_create_p.add_argument("--description", type=str, default="", help="Task description")
+    task_create_p.add_argument("--type", type=str, default=None, help="Task type (bug, feature, refactor, etc.)")
+    task_create_p.add_argument("--priority", type=str, default=None, help="Task priority (LOW, MEDIUM, HIGH, CRITICAL)")
+    task_create_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_create_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-status
+    task_status_p = subparsers.add_parser("task-status", help="Get engineering task status")
+    task_status_p.add_argument("task_id", type=str, help="Task ID")
+    task_status_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_status_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-analyze
+    task_analyze_p = subparsers.add_parser("task-analyze", help="Analyze task and discover root cause")
+    task_analyze_p.add_argument("task_id", type=str, help="Task ID")
+    task_analyze_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_analyze_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-plan
+    task_plan_p = subparsers.add_parser("task-plan", help="Generate implementation plan and patch proposal")
+    task_plan_p.add_argument("task_id", type=str, help="Task ID")
+    task_plan_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_plan_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-approve
+    task_approve_p = subparsers.add_parser("task-approve", help="Approve an engineering task")
+    task_approve_p.add_argument("task_id", type=str, help="Task ID")
+    task_approve_p.add_argument("--reason", type=str, default=None, help="Approval comment")
+    task_approve_p.add_argument("--force", action="store_true", help="Explicit confirmation for HIGH risk")
+    task_approve_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_approve_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-reject
+    task_reject_p = subparsers.add_parser("task-reject", help="Reject an engineering task")
+    task_reject_p.add_argument("task_id", type=str, help="Task ID")
+    task_reject_p.add_argument("--reason", type=str, default=None, help="Rejection comment")
+    task_reject_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_reject_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-execute
+    task_exec_p = subparsers.add_parser("task-execute", help="Execute an approved engineering task")
+    task_exec_p.add_argument("task_id", type=str, help="Task ID")
+    task_exec_p.add_argument("--no-tests", action="store_true", help="Skip post-apply tests")
+    task_exec_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_exec_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-diff
+    task_diff_p = subparsers.add_parser("task-diff", help="View task proposed diff")
+    task_diff_p.add_argument("task_id", type=str, help="Task ID")
+    task_diff_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_diff_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    # task-report
+    task_report_p = subparsers.add_parser("task-report", help="View PR-ready summary for task")
+    task_report_p.add_argument("task_id", type=str, help="Task ID")
+    task_report_p.add_argument("--project-dir", type=str, default=".", help="Target project directory")
+    task_report_p.add_argument("--json", action="store_true", help="Output in JSON format")
+
     args = parser.parse_args()
 
 
@@ -3319,6 +3645,77 @@ def main():
             run_project_review(project_id=args.project_id, as_json=args.json)
         elif args.project_action == "delete":
             run_project_delete(project_id=args.project_id, hard=args.hard, as_json=args.json)
+    elif args.command == "task":
+        run_task(
+            request=args.request,
+            description=args.description,
+            auto_approve=args.auto_approve,
+            force=args.force,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-create":
+        run_task_create(
+            title=args.title,
+            description=args.description,
+            task_type=args.type,
+            priority=args.priority,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-status":
+        run_task_status(
+            task_id=args.task_id,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-analyze":
+        run_task_analyze(
+            task_id=args.task_id,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-plan":
+        run_task_plan(
+            task_id=args.task_id,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-approve":
+        run_task_approve(
+            task_id=args.task_id,
+            reason=args.reason,
+            force=args.force,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-reject":
+        run_task_reject(
+            task_id=args.task_id,
+            reason=args.reason,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-execute":
+        run_task_execute(
+            task_id=args.task_id,
+            no_tests=args.no_tests,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-diff":
+        run_task_diff(
+            task_id=args.task_id,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+    elif args.command == "task-report":
+        run_task_report(
+            task_id=args.task_id,
+            project_dir=args.project_dir,
+            as_json=args.json,
+        )
+
 
 
 if __name__ == "__main__":

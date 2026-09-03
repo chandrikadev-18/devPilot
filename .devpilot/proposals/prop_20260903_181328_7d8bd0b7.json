@@ -1,0 +1,41 @@
+{
+  "proposal_id": "prop_20260903_181328_7d8bd0b7",
+  "request": "Add validation to project creation",
+  "target_symbol": "run_project_add",
+  "target_file": "app/main.py",
+  "target_lines": "2480-2515",
+  "change_summary": "Proposed modification to run_project_add in app/main.py with blast radius across 1 dependent symbol(s).",
+  "affected_files": [
+    "app/main.py"
+  ],
+  "affected_symbols": [
+    "main",
+    "run_project_add"
+  ],
+  "proposed_changes": [
+    "Add input validation and boundary checks",
+    "Raise appropriate error on invalid parameters",
+    "Preserve existing return signature"
+  ],
+  "patch": "--- a/app/main.py\n+++ b/app/main.py\n@@ -2485,6 +2485,7 @@\n     as_json: bool = False,\n\n ):\n\n     \"\"\"Registers a new project.\"\"\"\n\n+    # [DevPilot v2.2] Add validation to project creation\n\n     from app.projects.service import ProjectService\n\n     try:\n\n         service = ProjectService()\n",
+  "tests_to_update": [
+    "tests/test_project_management.py"
+  ],
+  "tests_to_add": [
+    "Add regression test for modified behavior if appropriate"
+  ],
+  "risk": "LOW",
+  "reasoning": "Target 'run_project_add' has 1 direct dependent(s) and 0 indirect dependent(s) across 1 file(s). 1 relevant test suite(s) identified for validation. Low blast radius makes this a localized, safe change.",
+  "confidence": 1.0,
+  "warnings": [],
+  "unverified_assumptions": [],
+  "status": "PENDING_APPROVAL",
+  "created_at": "2026-09-03T18:13:28.679824+00:00",
+  "updated_at": "2026-09-03T18:13:28.679824+00:00",
+  "approved_at": null,
+  "rejected_at": null,
+  "applied_at": null,
+  "decision": null,
+  "decision_reason": null,
+  "target_content_hash": "ac3c8c2f8e4522a1d519f1b5521041eab1455bc33d9840c3c03484c1c18617ba"
+}

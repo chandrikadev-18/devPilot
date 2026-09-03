@@ -812,5 +812,203 @@
     "created_at": "2026-09-03T17:14:34.136170+00:00",
     "updated_at": "2026-09-03T17:14:34.638453+00:00",
     "metadata": {}
+  },
+  "proj_format_test_fd2c1c": {
+    "project_id": "proj_format_test_fd2c1c",
+    "name": "Format Test",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-180/test_18_api_response_format0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:37:38.487164+00:00",
+    "updated_at": "2026-09-03T17:37:38.487164+00:00",
+    "metadata": {}
+  },
+  "proj_api_test_project_625f5d": {
+    "project_id": "proj_api_test_project_625f5d",
+    "name": "API Test Project",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-180/test_api_create_and_get_projec0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:37:43.268350+00:00",
+    "updated_at": "2026-09-03T17:37:43.268350+00:00",
+    "metadata": {}
+  },
+  "proj_project_1_26713a": {
+    "project_id": "proj_project_1_26713a",
+    "name": "Project 1",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-180/test_api_create_project_duplic0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:37:43.828745+00:00",
+    "updated_at": "2026-09-03T17:37:43.828745+00:00",
+    "metadata": {}
+  },
+  "proj_scan_graph_target_55590d": {
+    "project_id": "proj_scan_graph_target_55590d",
+    "name": "Scan Graph Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-180/test_api_project_scan_and_grap0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:37:44.443793+00:00",
+    "updated_at": "2026-09-03T17:37:44.443793+00:00",
+    "metadata": {}
+  },
+  "proj_review_target_7f1d79": {
+    "project_id": "proj_review_target_7f1d79",
+    "name": "Review Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-180/test_api_project_review0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:37:45.517029+00:00",
+    "updated_at": "2026-09-03T17:37:45.517029+00:00",
+    "metadata": {}
+  },
+  "proj_delete_target_ea6ed3": {
+    "project_id": "proj_delete_target_ea6ed3",
+    "name": "Delete Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-180/test_api_delete_project0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ARCHIVED",
+    "created_at": "2026-09-03T17:37:46.908643+00:00",
+    "updated_at": "2026-09-03T17:37:47.431647+00:00",
+    "metadata": {}
+  },
+  "proj_format_test_f08000": {
+    "project_id": "proj_format_test_f08000",
+    "name": "Format Test",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-181/test_18_api_response_format0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:47:37.296387+00:00",
+    "updated_at": "2026-09-03T17:47:37.296387+00:00",
+    "metadata": {}
+  },
+  "proj_api_test_project_f0f94f": {
+    "project_id": "proj_api_test_project_f0f94f",
+    "name": "API Test Project",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-181/test_api_create_and_get_projec0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:47:42.653682+00:00",
+    "updated_at": "2026-09-03T17:47:42.653682+00:00",
+    "metadata": {}
+  },
+  "proj_project_1_f523b5": {
+    "project_id": "proj_project_1_f523b5",
+    "name": "Project 1",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-181/test_api_create_project_duplic0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:47:43.231826+00:00",
+    "updated_at": "2026-09-03T17:47:43.231826+00:00",
+    "metadata": {}
+  },
+  "proj_scan_graph_target_5084c1": {
+    "project_id": "proj_scan_graph_target_5084c1",
+    "name": "Scan Graph Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-181/test_api_project_scan_and_grap0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:47:43.792297+00:00",
+    "updated_at": "2026-09-03T17:47:43.792297+00:00",
+    "metadata": {}
+  },
+  "proj_review_target_3b654b": {
+    "project_id": "proj_review_target_3b654b",
+    "name": "Review Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-181/test_api_project_review0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:47:44.882644+00:00",
+    "updated_at": "2026-09-03T17:47:44.882644+00:00",
+    "metadata": {}
+  },
+  "proj_delete_target_90ae74": {
+    "project_id": "proj_delete_target_90ae74",
+    "name": "Delete Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-181/test_api_delete_project0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ARCHIVED",
+    "created_at": "2026-09-03T17:47:46.345013+00:00",
+    "updated_at": "2026-09-03T17:47:46.913508+00:00",
+    "metadata": {}
+  },
+  "proj_format_test_236e2c": {
+    "project_id": "proj_format_test_236e2c",
+    "name": "Format Test",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-182/test_18_api_response_format0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:53:58.367383+00:00",
+    "updated_at": "2026-09-03T17:53:58.367383+00:00",
+    "metadata": {}
+  },
+  "proj_api_test_project_b8fa81": {
+    "project_id": "proj_api_test_project_b8fa81",
+    "name": "API Test Project",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-182/test_api_create_and_get_projec0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:54:04.208738+00:00",
+    "updated_at": "2026-09-03T17:54:04.208738+00:00",
+    "metadata": {}
+  },
+  "proj_project_1_31a871": {
+    "project_id": "proj_project_1_31a871",
+    "name": "Project 1",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-182/test_api_create_project_duplic0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:54:04.812481+00:00",
+    "updated_at": "2026-09-03T17:54:04.812481+00:00",
+    "metadata": {}
+  },
+  "proj_scan_graph_target_8a6e6c": {
+    "project_id": "proj_scan_graph_target_8a6e6c",
+    "name": "Scan Graph Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-182/test_api_project_scan_and_grap0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:54:05.382500+00:00",
+    "updated_at": "2026-09-03T17:54:05.382500+00:00",
+    "metadata": {}
+  },
+  "proj_review_target_25e9d6": {
+    "project_id": "proj_review_target_25e9d6",
+    "name": "Review Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-182/test_api_project_review0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ACTIVE",
+    "created_at": "2026-09-03T17:54:06.553672+00:00",
+    "updated_at": "2026-09-03T17:54:06.553672+00:00",
+    "metadata": {}
+  },
+  "proj_delete_target_d3fdaf": {
+    "project_id": "proj_delete_target_d3fdaf",
+    "name": "Delete Target",
+    "path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-182/test_api_delete_project0",
+    "repository": null,
+    "default_branch": "master",
+    "status": "ARCHIVED",
+    "created_at": "2026-09-03T17:54:08.021192+00:00",
+    "updated_at": "2026-09-03T17:54:08.035223+00:00",
+    "metadata": {}
   }
 }

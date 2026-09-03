@@ -540,6 +540,54 @@ npm run build
 | **Autonomous Change Planning & Patch Loop** | Completed (v2.0 - v2.4) | Maintained |
 | **Project Management & Operation Tracking** | Completed (v2.5) | Maintained |
 | **Production Hardening, Health & Observability** | Completed (v2.6) | Maintained |
-| **React + Vite + TypeScript Frontend** | **Completed (v3.0)** | Maintained |
+| **React + Vite + TypeScript Frontend** | Completed (v3.0) | Maintained |
+| **Advanced Code Intelligence & Stemming** | Completed (v3.2) | Maintained |
+| **Autonomous Code Change & Safe Fix** | Completed (v3.3) | Maintained |
+| **Autonomous Issue-to-PR Software Engineering Agent** | **Completed (v3.4)** | Maintained |
+
+---
+
+## DevPilot v3.4 — Autonomous Issue-to-PR Engineering
+
+DevPilot v3.4 takes high-level software engineering issues and autonomously executes the complete, approval-gated issue-to-PR lifecycle:
+
+```text
+Issue / Bug Report
+       ↓
+Issue Understanding & Progressive Narrowing
+       ↓
+Root Cause Analysis & Evidence Gathering
+       ↓
+Impact Analysis & Dependency Graph Traversal
+       ↓
+Implementation Plan & Test Discovery / Generation
+       ↓
+Reviewable Unified Diff Proposal
+       ↓
+Explicit Human Approval (WAITING_APPROVAL -> APPROVED)
+       ↓
+Atomic Pre-flight Checkpoint & Safe Patch Application
+       ↓
+Python AST Syntax & Targeted Test Verification
+       ↓
+Autonomous Fix Iterations (Max Retries = 3)
+       ↓
+Post-Change Git Review & PR-Ready Markdown Summary
+```
+
+### CLI Workflow
+```bash
+# Run complete autonomous workflow
+python -m app.main task "Fix login returning 500 when password is invalid"
+
+# Create, analyze, plan, approve, and execute in discrete stages
+python -m app.main task-create "Add validation to project creation"
+python -m app.main task-analyze <task_id>
+python -m app.main task-plan <task_id>
+python -m app.main task-approve <task_id>
+python -m app.main task-execute <task_id>
+python -m app.main task-report <task_id>
+```
+
 
 
