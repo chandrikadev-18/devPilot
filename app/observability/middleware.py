@@ -86,7 +86,12 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
 
             clear_request_id()
 
-            # Ensure correlation headers are present if response object was created
+            # Ensure correlation and security headers are present if response object was created
             if "response" in locals() and isinstance(response, Response):
                 response.headers["X-Request-ID"] = request_id
                 response.headers["X-Response-Time-MS"] = f"{duration_ms:.2f}"
+                response.headers["X-Content-Type-Options"] = "nosniff"
+                response.headers["X-Frame-Options"] = "DENY"
+                response.headers["X-XSS-Protection"] = "1; mode=block"
+                response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+

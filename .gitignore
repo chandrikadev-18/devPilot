@@ -16,3 +16,6 @@ data/
 # Frontend dependencies and build output
 frontend/node_modules/
 frontend/dist/
+
+# Runtime task storage
+.devpilot/tasks/

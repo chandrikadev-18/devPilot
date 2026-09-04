@@ -544,11 +544,91 @@ npm run build
 | **Advanced Code Intelligence & Stemming** | Completed (v3.2) | Maintained |
 | **Autonomous Code Change & Safe Fix** | Completed (v3.3) | Maintained |
 | **Autonomous Issue-to-PR Software Engineering Agent** | Completed (v3.4) | Maintained |
-| **Observability, Monitoring & Operational Readiness** | **Completed (v3.5)** | Maintained |
+| **Observability, Monitoring & Operational Readiness** | Completed (v3.5) | Maintained |
+| **Resilience & Fault Tolerance** | Completed (v3.6) | Maintained |
+| **Performance & Scalability** | Completed (v3.7) | Maintained |
+| **Security Hardening & Compliance** | Completed (v3.8) | Maintained |
+| **Deployment, CI/CD & Disaster Recovery** | Completed (v3.9) | Maintained |
+| **Final Release Candidate & Certification** | **Completed (v4.0)** | Certified |
+
+---
+
+## DevPilot v4.0 — Enterprise Final Release Candidate & Certification
+
+DevPilot v4.0 Enterprise represents the certified, fully validated, production-grade release candidate:
+* **End-to-End Certified**: Complete verification of Issue-to-PR pipelines, RAG Q&A, graph analysis, project tracking, security gates, observability metrics, and automated rollback workflows.
+* **100% Test Gating**: Full regression test suite passing across Unit, Integration, API, Frontend, Security, Reliability, Performance, Observability, and Recovery matrices.
+* **Security & Multi-Tenant Verified**: RBAC, strict tenant boundary enforcement, input sanitization, path traversal sandboxing, and real-time secret redaction.
+* **Resilience & Disaster Recovery**: High-availability health/readiness gating, cold-start state persistence, and atomic rollback checkpointing.
+
+---
+
+## DevPilot v3.9 — Deployment, CI/CD & Disaster Recovery
+
+DevPilot v3.9 ensures repeatable, automated, and recoverable production deployments:
+
+### 1. Deployment Workflow
+```text
+Source Code (Git) 
+   → Clean Build (Python 3.12 + Node 20) 
+   → Automated Test Gating (pytest + vitest) 
+   → Security & Compliance Audit (test_v38_security.py) 
+   → Production Package Assembly (dist/) 
+   → Deployment Health Gate (/health + /health/ready) 
+   → Production Active & Monitored
+```
+
+### 2. Startup Commands
+* **Backend Production Server**:
+  ```bash
+  uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 4
+  ```
+* **Frontend Production Build**:
+  ```bash
+  cd frontend
+  npm ci
+  npm run build
+  npm run preview
+  ```
+
+### 3. CI/CD Pipeline
+* GitHub Actions workflow configured in `.github/workflows/ci.yml`.
+* Automated test gating on pull requests and pushes to `main`.
+* Fails immediately if backend tests, frontend build, or security tests fail.
+
+### 4. Backup & Disaster Recovery
+* **Persistent Storage**: All operational data (projects, tasks, operations, proposals) is stored in `.devpilot/` and `data/`.
+* **Snapshot & Backup**:
+  ```bash
+  cp -r .devpilot/ /path/to/backups/devpilot_$(date +%Y%m%d_%H%M%S)
+  ```
+* **Restore Procedure**:
+  ```bash
+  # 1. Stop backend service
+  # 2. Restore snapshot
+  cp -r /path/to/backups/devpilot_snapshot/. .devpilot/
+  # 3. Start backend service and verify /health/ready
+  ```
+
+### 5. Safe Rollback Strategy
+* **Application Rollback**: Deploy previous container image / git commit tag.
+* **Frontend Rollback**: Serve previous `frontend/dist` static build.
+* **Patch Checkpoints**: Revert modified files atomically using `RollbackManager.restore_checkpoint(checkpoint_id)`.
+
+---
+
+## DevPilot v3.8 — Security Hardening & Compliance Readiness
+
+* **Defense-in-Depth HTTP Headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`.
+* **Strict CORS Whitelisting**: Explicitly configured for trusted local origins without wildcards.
+* **Automatic Secret Redaction**: Real-time regex sanitization of API keys (Groq, OpenAI), Bearer tokens, passwords, and dictionary payloads in logs and metrics.
+* **Path Traversal Sandboxing**: `resolve_safe_path` strictly rejects `../`, `.env`, `.git/`, and paths resolving outside the project root.
+* **Approval Gates**: Mandatory human approval with explicit confirmation (`--force`) for high-risk changes and SHA-256 target file drift validation.
 
 ---
 
 ## DevPilot v3.5 — Observability, Health & Operational Monitoring
+
 
 DevPilot v3.5 provides enterprise-grade observability and operational monitoring:
 

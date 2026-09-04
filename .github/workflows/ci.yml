@@ -1,0 +1,68 @@
+name: DevPilot Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-validation:
+    name: Backend Validation & Security Testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio anyio httpx
+
+      - name: Run Backend Test Suite (Pytest)
+        run: |
+          pytest -v
+
+      - name: Execute Security & Compliance Tests
+        run: |
+          pytest tests/test_v38_security.py -v
+
+      - name: Execute End-to-End Production Smoke Test
+        run: |
+          python smoke_test.py
+
+  frontend-validation:
+    name: Frontend Build & Unit Testing
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Run Frontend Tests (Vitest)
+        run: npm run test
+
+      - name: Build Production Assets
+        run: npm run build
