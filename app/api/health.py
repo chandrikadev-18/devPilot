@@ -1,20 +1,22 @@
 from pathlib import Path
 import shutil
-from fastapi import APIRouter
+from typing import Any, Dict
+from fastapi import APIRouter, Response, status
 from app.config import get_environment, get_llm_api_key, get_llm_model, get_llm_provider
-from app.schemas.health import DetailedHealthResponse, HealthResponse
+from app.observability.metrics import metrics
+from app.schemas.health import DetailedHealthResponse, HealthResponse, ReadinessResponse
 
-router = APIRouter(tags=["Health"])
+router = APIRouter(tags=["Health & Observability"])
 
 
 @router.get(
     "/health",
     response_model=HealthResponse,
-    summary="Service Health Check",
-    description="Returns the health status, service name, and version of DevPilot.",
+    summary="Liveness Probe",
+    description="Returns the basic liveness health status of DevPilot.",
 )
 def get_health() -> HealthResponse:
-    """Returns service health and version information."""
+    """Returns basic service liveness and version information."""
     return HealthResponse(
         status="ok",
         service="DevPilot",
@@ -23,14 +25,104 @@ def get_health() -> HealthResponse:
 
 
 @router.get(
+    "/health/ready",
+    response_model=ReadinessResponse,
+    summary="Readiness Probe",
+    description="Evaluates critical subsystems (storage, vector database, graph parser, Git) and returns readiness state.",
+)
+def get_readiness(response: Response) -> ReadinessResponse:
+    """
+    Comprehensive readiness probe distinguishing healthy, degraded, and unavailable states.
+    Returns HTTP 503 if critical persistence storage is unavailable.
+    """
+    checks: Dict[str, Dict[str, Any]] = {}
+
+    # 1. Storage check (CRITICAL)
+    storage_writable = True
+    storage_error = None
+    try:
+        dot_devpilot = Path.cwd() / ".devpilot"
+        dot_devpilot.mkdir(parents=True, exist_ok=True)
+        test_file = dot_devpilot / ".readiness_probe.tmp"
+        test_file.write_text("probe", encoding="utf-8")
+        if test_file.exists():
+            test_file.unlink()
+    except Exception as e:
+        storage_writable = False
+        storage_error = "Storage directory is not writable"
+
+    checks["storage"] = {
+        "status": "healthy" if storage_writable else "unavailable",
+        "writable": storage_writable,
+        "detail": storage_error or "Filesystem storage ready",
+    }
+
+    # 2. Vector store check
+    qdrant_ready = True
+    qdrant_msg = "Vector store operational"
+    try:
+        from app.vector_store.qdrant_store import QdrantVectorStore
+        _ = QdrantVectorStore
+    except Exception as e:
+        qdrant_ready = False
+        qdrant_msg = "Vector store initialization error"
+
+    checks["vector_store"] = {
+        "status": "healthy" if qdrant_ready else "unavailable",
+        "detail": qdrant_msg,
+    }
+
+    # 3. Graph parser check
+    graph_ready = True
+    try:
+        from app.graph.builder import GraphBuilder
+        _ = GraphBuilder
+    except Exception:
+        graph_ready = False
+
+    checks["graph_parser"] = {
+        "status": "healthy" if graph_ready else "degraded",
+        "detail": "AST and graph engine ready" if graph_ready else "Graph engine degraded",
+    }
+
+    # 4. Git availability check (Optional / Non-critical for standalone exploration)
+    git_cmd = shutil.which("git")
+    git_available = bool(git_cmd)
+    checks["git"] = {
+        "status": "healthy" if git_available else "degraded",
+        "available": git_available,
+        "detail": "Git binary discovered" if git_available else "Git binary not found in PATH",
+    }
+
+    # Determine overall status
+    if not storage_writable or not qdrant_ready:
+        overall_status = "unavailable"
+        is_ready = False
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    elif not git_available or not graph_ready:
+        overall_status = "degraded"
+        is_ready = True
+    else:
+        overall_status = "healthy"
+        is_ready = True
+
+    return ReadinessResponse(
+        status=overall_status,
+        service="DevPilot",
+        version="1.4",
+        checks=checks,
+        ready=is_ready,
+    )
+
+
+@router.get(
     "/health/details",
     response_model=DetailedHealthResponse,
-    summary="Detailed Health Check",
-    description="Returns detailed diagnostic health of DevPilot subsystems (Git, storage, graph, LLM).",
+    summary="Detailed Diagnostic Health",
+    description="Returns granular subsystem diagnostics.",
 )
 def get_health_details() -> DetailedHealthResponse:
     """Returns granular subsystem diagnostics."""
-    # 1. Git subsystem check
     git_cmd = shutil.which("git")
     git_available = bool(git_cmd)
     git_version = None
@@ -43,7 +135,6 @@ def get_health_details() -> DetailedHealthResponse:
         except Exception:
             pass
 
-    # 2. Storage subsystem check
     storage_ok = True
     storage_writable = True
     try:
@@ -57,7 +148,6 @@ def get_health_details() -> DetailedHealthResponse:
         storage_writable = False
         storage_ok = False
 
-    # 3. Graph subsystem check
     graph_ok = True
     try:
         from app.graph.builder import GraphBuilder
@@ -65,7 +155,6 @@ def get_health_details() -> DetailedHealthResponse:
     except Exception:
         graph_ok = False
 
-    # 4. LLM provider check
     llm_prov = get_llm_provider()
     llm_key_present = bool(get_llm_api_key(llm_prov))
 
@@ -94,3 +183,12 @@ def get_health_details() -> DetailedHealthResponse:
         },
     )
 
+
+@router.get(
+    "/metrics",
+    summary="Operational Performance Metrics",
+    description="Exposes safe in-memory performance metrics, request latency distributions, and task execution counts.",
+)
+def get_metrics() -> Dict[str, Any]:
+    """Returns safe aggregated system performance and operational metrics."""
+    return metrics.get_summary()

@@ -325,9 +325,8 @@ class EngineeringTaskEngine:
         Safely executes approved task with autonomous fix loop and review.
         Transitions: APPROVED -> IMPLEMENTING -> TESTING -> REVIEWING -> COMPLETED (or FAILED/ROLLED_BACK).
         """
-        task = self.task_store.get(task_id)
-        if not task:
-            raise ValueError(f"Task '{task_id}' not found.")
+        if task.status == TaskState.COMPLETED.value:
+            return task
 
         if task.status != TaskState.APPROVED.value:
             raise InvalidTaskStateTransitionError(f"Task '{task_id}' must be APPROVED before execution (current: {task.status}).")

@@ -4,13 +4,15 @@ export class ApiError extends Error {
   status: number;
   code?: string;
   detail?: string;
+  requestId?: string;
 
-  constructor(message: string, status: number, code?: string, detail?: string) {
+  constructor(message: string, status: number, code?: string, detail?: string, requestId?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.requestId = requestId;
   }
 }
 
@@ -40,17 +42,22 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
 
+  const clientRequestId = `req_${Math.random().toString(36).substring(2, 11)}`;
+
   try {
     const response = await fetch(url, {
       ...rest,
       headers: {
         'Content-Type': 'application/json',
+        'X-Request-ID': clientRequestId,
         ...headers,
       },
       signal: controller.signal,
     });
 
     clearTimeout(id);
+
+    const serverRequestId = (typeof response.headers?.get === 'function' ? response.headers.get('X-Request-ID') : null) || clientRequestId;
 
     if (!response.ok) {
       let errorData: any = {};
@@ -66,7 +73,13 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
         `Request failed with status ${response.status}`;
       const code = errorData.error?.code || (response.status === 404 ? 'NOT_FOUND' : 'ERROR');
 
-      throw new ApiError(message, response.status, code, errorData.detail || message);
+      throw new ApiError(
+        message,
+        response.status,
+        code,
+        errorData.detail || message,
+        errorData.request_id || serverRequestId
+      );
     }
 
     if (response.status === 204) {
@@ -77,11 +90,11 @@ export async function apiClient<T>(endpoint: string, options: RequestOptions = {
   } catch (err: any) {
     clearTimeout(id);
     if (err.name === 'AbortError') {
-      throw new ApiError('Request timed out', 408, 'TIMEOUT');
+      throw new ApiError('Request timed out', 408, 'TIMEOUT', undefined, clientRequestId);
     }
     if (err instanceof ApiError) {
       throw err;
     }
-    throw new ApiError(err.message || 'Network request failed', 0, 'NETWORK_ERROR');
+    throw new ApiError(err.message || 'Network request failed', 0, 'NETWORK_ERROR', undefined, clientRequestId);
   }
 }

@@ -4,6 +4,14 @@ export interface HealthResponse {
   version: string;
 }
 
+export interface ReadinessResponse {
+  status: 'healthy' | 'degraded' | 'unavailable' | string;
+  service: string;
+  version: string;
+  ready: boolean;
+  checks: Record<string, { status: string; detail?: string; [key: string]: any }>;
+}
+
 export interface DetailedHealthResponse {
   status: 'ok' | 'degraded' | 'error' | string;
   service: string;
@@ -26,3 +34,4 @@ export interface DetailedHealthResponse {
     api_key_configured: boolean;
   };
 }
+

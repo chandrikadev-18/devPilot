@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProjectProvider } from './context/ProjectContext';
 import { ToastProvider } from './context/ToastContext';
 import { AppLayout } from './layouts/AppLayout';
@@ -21,33 +22,35 @@ import { TaskWorkspacePage } from './pages/TaskWorkspacePage';
 
 export const App: React.FC = () => {
   return (
-    <BrowserRouter>
-      <ToastProvider>
-        <ProjectProvider>
-          <Routes>
-            <Route element={<AppLayout />}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/tasks" element={<TaskWorkspacePage />} />
-              <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/projects/new" element={<ProjectNewPage />} />
-              <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-              <Route path="/projects/:projectId/tasks" element={<TaskWorkspacePage />} />
-              <Route path="/projects/:projectId/explorer" element={<CodeExplorerPage />} />
-              <Route path="/projects/:projectId/graph" element={<DependencyGraphPage />} />
-              <Route path="/projects/:projectId/agent" element={<AIAgentPage />} />
-              <Route path="/projects/:projectId/review" element={<CodeReviewPage />} />
-              <Route path="/projects/:projectId/changes" element={<ChangesPage />} />
-              <Route path="/projects/:projectId/fix" element={<SafeFixPage />} />
-              <Route path="/projects/:projectId/git" element={<GitIntelligencePage />} />
-              <Route path="/operations" element={<OperationsPage />} />
-              <Route path="/health" element={<HealthPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Route>
-          </Routes>
-        </ProjectProvider>
-      </ToastProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ToastProvider>
+          <ProjectProvider>
+            <Routes>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/tasks" element={<TaskWorkspacePage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/projects/new" element={<ProjectNewPage />} />
+                <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+                <Route path="/projects/:projectId/tasks" element={<TaskWorkspacePage />} />
+                <Route path="/projects/:projectId/explorer" element={<CodeExplorerPage />} />
+                <Route path="/projects/:projectId/graph" element={<DependencyGraphPage />} />
+                <Route path="/projects/:projectId/agent" element={<AIAgentPage />} />
+                <Route path="/projects/:projectId/review" element={<CodeReviewPage />} />
+                <Route path="/projects/:projectId/changes" element={<ChangesPage />} />
+                <Route path="/projects/:projectId/fix" element={<SafeFixPage />} />
+                <Route path="/projects/:projectId/git" element={<GitIntelligencePage />} />
+                <Route path="/operations" element={<OperationsPage />} />
+                <Route path="/health" element={<HealthPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              </Route>
+            </Routes>
+          </ProjectProvider>
+        </ToastProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 };

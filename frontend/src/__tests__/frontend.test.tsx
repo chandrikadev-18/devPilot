@@ -193,12 +193,18 @@ describe('DevPilot Frontend Comprehensive Integration Suite (v3.0)', () => {
     const health = await healthApi.check();
     expect(health.status).toBe('ok');
 
+    const readiness = await healthApi.checkReadiness();
+    expect(readiness.ready).toBe(true);
+    expect(readiness.status).toBe('healthy');
+    expect(readiness.checks.storage).toBeDefined();
+
     const detailed = await healthApi.checkDetails();
     expect(detailed.status).toBe('ok');
     expect(detailed.git.available).toBe(true);
     expect(detailed.storage.available).toBe(true);
     expect(detailed.llm.provider).toBe('groq');
   });
+
 
   // 13. Error Handling
   it('13. ApiClient gracefully handles and wraps HTTP errors', async () => {

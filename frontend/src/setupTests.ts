@@ -23,6 +23,27 @@ import { vi } from 'vitest';
     });
   }
 
+  if (url.includes('/health/ready')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          status: 'healthy',
+          service: 'DevPilot',
+          version: '3.0',
+          ready: true,
+          checks: {
+            storage: { status: 'healthy', writable: true },
+            vector_store: { status: 'healthy' },
+            graph_parser: { status: 'healthy' },
+            git: { status: 'healthy', available: true },
+          },
+        }),
+    });
+  }
+
+
   if (url.includes('/health')) {
     return Promise.resolve({
       ok: true,

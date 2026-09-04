@@ -77,8 +77,19 @@ class StructuredJsonFormatter(logging.Formatter):
             "message": message,
         }
 
+        # Include correlation ID
+        req_id = getattr(record, "request_id", None)
+        if not req_id:
+            try:
+                from app.observability.correlation import get_request_id
+                req_id = get_request_id()
+            except Exception:
+                req_id = None
+        if req_id:
+            log_data["request_id"] = req_id
+
         # Include structured extra fields if present
-        for attr in ("operation", "project_id", "operation_id", "review_id", "duration_ms", "status", "error"):
+        for attr in ("operation", "project_id", "operation_id", "task_id", "proposal_id", "review_id", "duration_ms", "status", "error", "path", "method", "status_code"):
             if hasattr(record, attr):
                 val = getattr(record, attr)
                 log_data[attr] = sanitize_payload(val) if val is not None else None

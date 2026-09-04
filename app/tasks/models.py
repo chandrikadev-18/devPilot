@@ -71,7 +71,9 @@ class InvalidTaskStateTransitionError(Exception):
 
 
 def validate_task_transition(current: TaskState, target: TaskState) -> None:
-    """Enforces strict deterministic state machine rules."""
+    """Enforces strict deterministic state machine rules with idempotent self-transition."""
+    if current == target:
+        return
     allowed = ALLOWED_STATE_TRANSITIONS.get(current, [])
     if target not in allowed:
         raise InvalidTaskStateTransitionError(

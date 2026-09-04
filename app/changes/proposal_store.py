@@ -70,8 +70,10 @@ class ProposalStore:
                 pass
 
         p_file = self._get_proposal_file(proposal.proposal_id)
-        with open(p_file, "w", encoding="utf-8") as f:
+        temp_file = p_file.with_suffix(".tmp")
+        with open(temp_file, "w", encoding="utf-8") as f:
             json.dump(proposal.to_dict(), f, indent=2)
+        temp_file.replace(p_file)
 
         return proposal
 

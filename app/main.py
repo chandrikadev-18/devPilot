@@ -87,7 +87,9 @@ from app.api import api_router
 from app.api.changes import router as changes_router
 from app.api.health import router as health_router
 from app.api.projects import router as projects_router
+from contextlib import asynccontextmanager
 from app.logger import logger
+from app.observability import ObservabilityMiddleware, get_request_id
 from app.projects.service import (
     DuplicateProjectError,
     InvalidProjectPathError,
@@ -95,12 +97,26 @@ from app.projects.service import (
     ProjectNotFoundError,
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup validation and initialization
+    logger.info("DevPilot API initializing startup sequence...")
+    dot_devpilot = Path.cwd() / ".devpilot"
+    dot_devpilot.mkdir(parents=True, exist_ok=True)
+    yield
+    # Graceful shutdown sequence
+    logger.info("DevPilot API shutting down gracefully.")
+
+
 app = FastAPI(
     title="DevPilot API",
     version="1.4",
     description="DevPilot AI Codebase Exploration, Project Management & Analysis REST API",
+    lifespan=lifespan,
 )
 
+app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -118,14 +134,17 @@ app.include_router(projects_router)
 app.include_router(changes_router)
 
 
-# Global Exception Handlers for consistent API error responses (v2.6)
+# Global Exception Handlers for consistent API error responses (v2.6 / v3.5)
 @app.exception_handler(ProjectNotFoundError)
 def project_not_found_handler(request: Request, exc: ProjectNotFoundError):
-    logger.warning(f"Project not found: {exc}", extra={"path": str(request.url)})
+    req_id = get_request_id()
+    logger.warning(f"Project not found: {exc}", extra={"path": str(request.url), "request_id": req_id})
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
+        headers={"X-Request-ID": req_id},
         content={
             "status": "error",
+            "request_id": req_id,
             "error": {"code": "PROJECT_NOT_FOUND", "message": str(exc)},
             "detail": str(exc),
         },
@@ -134,11 +153,14 @@ def project_not_found_handler(request: Request, exc: ProjectNotFoundError):
 
 @app.exception_handler(DuplicateProjectError)
 def duplicate_project_handler(request: Request, exc: DuplicateProjectError):
-    logger.warning(f"Duplicate project registration: {exc}", extra={"path": str(request.url)})
+    req_id = get_request_id()
+    logger.warning(f"Duplicate project registration: {exc}", extra={"path": str(request.url), "request_id": req_id})
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
+        headers={"X-Request-ID": req_id},
         content={
             "status": "error",
+            "request_id": req_id,
             "error": {"code": "DUPLICATE_PROJECT", "message": str(exc)},
             "detail": str(exc),
         },
@@ -147,11 +169,14 @@ def duplicate_project_handler(request: Request, exc: DuplicateProjectError):
 
 @app.exception_handler(InvalidProjectPathError)
 def invalid_project_path_handler(request: Request, exc: InvalidProjectPathError):
-    logger.warning(f"Invalid project path: {exc}", extra={"path": str(request.url)})
+    req_id = get_request_id()
+    logger.warning(f"Invalid project path: {exc}", extra={"path": str(request.url), "request_id": req_id})
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
+        headers={"X-Request-ID": req_id},
         content={
             "status": "error",
+            "request_id": req_id,
             "error": {"code": "INVALID_PROJECT_PATH", "message": str(exc)},
             "detail": str(exc),
         },
@@ -160,11 +185,14 @@ def invalid_project_path_handler(request: Request, exc: InvalidProjectPathError)
 
 @app.exception_handler(OperationNotFoundError)
 def operation_not_found_handler(request: Request, exc: OperationNotFoundError):
-    logger.warning(f"Operation not found: {exc}", extra={"path": str(request.url)})
+    req_id = get_request_id()
+    logger.warning(f"Operation not found: {exc}", extra={"path": str(request.url), "request_id": req_id})
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
+        headers={"X-Request-ID": req_id},
         content={
             "status": "error",
+            "request_id": req_id,
             "error": {"code": "OPERATION_NOT_FOUND", "message": str(exc)},
             "detail": str(exc),
         },
@@ -176,6 +204,7 @@ def operation_not_found_handler(request: Request, exc: OperationNotFoundError):
 @app.exception_handler(status.HTTP_409_CONFLICT)
 @app.exception_handler(Exception)
 def generic_exception_handler(request: Request, exc: Exception):
+    req_id = get_request_id()
     status_code = getattr(exc, "status_code", 500)
     detail = getattr(exc, "detail", str(exc))
     
@@ -194,14 +223,16 @@ def generic_exception_handler(request: Request, exc: Exception):
         code = "DUPLICATE_PROJECT" if "project" in str(detail).lower() else "CONFLICT"
 
     if status_code >= 500:
-        logger.error(f"Internal server error: {exc}", extra={"path": str(request.url)}, exc_info=True)
+        logger.error(f"Internal server error: {exc}", extra={"path": str(request.url), "request_id": req_id}, exc_info=True)
     else:
-        logger.warning(f"Client error ({status_code}): {detail}", extra={"path": str(request.url)})
+        logger.warning(f"Client error ({status_code}): {detail}", extra={"path": str(request.url), "request_id": req_id})
 
     return JSONResponse(
         status_code=status_code,
+        headers={"X-Request-ID": req_id},
         content={
             "status": "error",
+            "request_id": req_id,
             "error": {"code": code, "message": str(detail)},
             "detail": detail,
         },

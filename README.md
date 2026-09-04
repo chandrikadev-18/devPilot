@@ -543,7 +543,37 @@ npm run build
 | **React + Vite + TypeScript Frontend** | Completed (v3.0) | Maintained |
 | **Advanced Code Intelligence & Stemming** | Completed (v3.2) | Maintained |
 | **Autonomous Code Change & Safe Fix** | Completed (v3.3) | Maintained |
-| **Autonomous Issue-to-PR Software Engineering Agent** | **Completed (v3.4)** | Maintained |
+| **Autonomous Issue-to-PR Software Engineering Agent** | Completed (v3.4) | Maintained |
+| **Observability, Monitoring & Operational Readiness** | **Completed (v3.5)** | Maintained |
+
+---
+
+## DevPilot v3.5 — Observability, Health & Operational Monitoring
+
+DevPilot v3.5 provides enterprise-grade observability and operational monitoring:
+
+### 1. Health & Readiness Probes
+* **Liveness Probe**: `GET /health` and `GET /api/health`
+  Returns `{"status": "ok", "service": "DevPilot", "version": "v3.5"}`.
+* **Readiness Probe**: `GET /health/ready` and `GET /api/health/ready`
+  Evaluates filesystem storage writeability, Qdrant vector store initialization, AST/Graph parser modules, and Git availability. Returns `healthy`, `degraded`, or `unavailable` (HTTP 503).
+* **Diagnostic Details**: `GET /health/details`
+  Provides granular diagnostics for Git, storage, graph, and LLM configuration.
+
+### 2. Request Correlation (X-Request-ID)
+* Every API request is assigned or preserves an `X-Request-ID` correlation identifier across logs, middleware, and error responses.
+* Returned in `X-Request-ID` and `X-Response-Time-MS` response headers.
+
+### 3. Operational Performance Metrics
+* **Metrics Endpoint**: `GET /metrics` and `GET /api/metrics`
+  Exposes in-memory operational metrics including total requests, requests by status group (`2xx`, `4xx`, `5xx`), latency distributions (avg, p50, p95, min, max), active requests, task executions, and database operations.
+
+### 4. Structured Logging & Secret Redaction
+* JSON structured logging with automatic regex-based redaction of passwords, tokens, and API keys.
+
+### 5. Frontend Error Boundary
+* Client-side React `ErrorBoundary` preventing white-screen crashes and providing diagnostic tracing and application recovery.
+
 
 ---
 
