@@ -82,11 +82,13 @@ from app.graph import (
 )
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from app.api import api_router
 from app.api.changes import router as changes_router
 from app.api.health import router as health_router
 from app.api.projects import router as projects_router
+from app.config import get_allowed_origins
 from contextlib import asynccontextmanager
 from app.logger import logger
 from app.observability import ObservabilityMiddleware, get_request_id
@@ -117,13 +119,14 @@ app = FastAPI(
 )
 
 app.add_middleware(ObservabilityMiddleware)
+
+allowed_origins = get_allowed_origins()
+allow_all = "*" in allowed_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"] if allow_all else allowed_origins,
+    allow_credentials=not allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -132,6 +135,49 @@ app.include_router(health_router)
 app.include_router(api_router)
 app.include_router(projects_router)
 app.include_router(changes_router)
+
+# Production SPA Static File Serving
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if frontend_dist.is_dir():
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        # Do not intercept API or health endpoints
+        if (
+            full_path.startswith("api/")
+            or full_path == "health"
+            or full_path.startswith("health/")
+            or full_path == "projects"
+            or full_path.startswith("projects/")
+            or full_path == "changes"
+            or full_path.startswith("changes/")
+            or full_path.startswith("docs")
+            or full_path.startswith("openapi.json")
+        ):
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "status": "error",
+                    "error": {
+                        "code": "NOT_FOUND",
+                        "message": f"Endpoint /{full_path} not found",
+                    },
+                },
+            )
+
+        file_path = frontend_dist / full_path
+        if full_path and file_path.is_file():
+            return FileResponse(str(file_path))
+
+        index_file = frontend_dist / "index.html"
+        if index_file.is_file():
+            return FileResponse(str(index_file))
+
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+
 
 
 # Global Exception Handlers for consistent API error responses (v2.6 / v3.5)

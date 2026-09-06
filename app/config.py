@@ -7,7 +7,7 @@ and search parameters with support for environment variables and optional .env f
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 def load_env_file(env_path: Optional[Path] = None) -> None:
@@ -211,6 +211,25 @@ def get_api_port() -> int:
         return 8000
 
 
+def get_allowed_origins() -> List[str]:
+    """
+    Returns list of allowed CORS origins.
+    Reads from ALLOWED_ORIGINS or CORS_ORIGINS (comma-separated).
+    Defaults to local development origins.
+    """
+    origins_env = os.getenv("ALLOWED_ORIGINS", os.getenv("CORS_ORIGINS", "")).strip()
+    if origins_env:
+        if origins_env == "*":
+            return ["*"]
+        return [origin.strip() for origin in origins_env.split(",") if origin.strip()]
+    return [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+
+
 def get_config_summary() -> dict:
     """
     Returns a safe summary of current configuration parameters with
@@ -233,6 +252,8 @@ def get_config_summary() -> dict:
         "max_project_size_mb": get_max_project_size_mb(),
         "api_host": get_api_host(),
         "api_port": get_api_port(),
+        "allowed_origins": get_allowed_origins(),
         "project_storage_location": get_project_storage_location(),
     }
+
 

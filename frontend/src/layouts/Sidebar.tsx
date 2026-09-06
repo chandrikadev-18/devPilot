@@ -138,10 +138,7 @@ export const Sidebar: React.FC = () => {
               fontWeight: isActive ? 600 : 500,
               color: isActive ? '#ffffff' : 'var(--text-secondary)',
               backgroundColor: isActive ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-              borderLeft: isActive ? '3px solid var(--accent-blue)' : '3px solid transparent',
-              transition: 'all 0.15s ease',
-              opacity: item.disabled ? 0.45 : 1,
-              pointerEvents: item.disabled ? 'none' : 'auto',
+              opacity: item.disabled ? 0.75 : 1,
             })}
           >
             {item.icon}

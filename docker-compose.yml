@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  devpilot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: devpilot:latest
+    container_name: devpilot-app
+    restart: unless-stopped
+    ports:
+      - "${DEVPILOT_PORT:-8000}:8000"
+    environment:
+      - DEVPILOT_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - MAX_PROJECT_SIZE_MB=${MAX_PROJECT_SIZE_MB:-500.0}
+      - OPERATION_TIMEOUT=${OPERATION_TIMEOUT:-60.0}
+      - TEST_TIMEOUT=${TEST_TIMEOUT:-30.0}
+    volumes:
+      - devpilot_data:/app/.devpilot
+      - devpilot_storage:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  devpilot_data:
+    driver: local
+  devpilot_storage:
+    driver: local
