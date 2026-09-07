@@ -4624,5 +4624,25 @@
       "duration_ms": 18139.51
     },
     "error": null
+  },
+  "op_scan_20260907_163912_fa96ea": {
+    "operation_id": "op_scan_20260907_163912_fa96ea",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-07T16:39:12.387950+00:00",
+    "completed_at": "2026-09-07T16:39:12.450593+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-206/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 11.42
+    },
+    "error": null
   }
 }

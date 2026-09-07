@@ -24,7 +24,8 @@ export const Button: React.FC<ButtonProps> = ({
       case 'primary':
         return {
           backgroundColor: 'var(--accent-blue)',
-          color: '#ffffff',
+          color: '#080C0A',
+          fontWeight: 600,
           border: '1px solid rgba(255, 255, 255, 0.1)',
           boxShadow: 'var(--shadow-sm)',
         };
@@ -44,12 +45,14 @@ export const Button: React.FC<ButtonProps> = ({
         return {
           backgroundColor: 'var(--accent-rose)',
           color: '#ffffff',
+          fontWeight: 600,
           border: '1px solid rgba(255, 255, 255, 0.1)',
         };
       case 'success':
         return {
           backgroundColor: 'var(--accent-emerald)',
-          color: '#ffffff',
+          color: '#080C0A',
+          fontWeight: 600,
           border: '1px solid rgba(255, 255, 255, 0.1)',
         };
       case 'ghost':

@@ -1,45 +1,45 @@
 :root {
-  /* Surface & Background Palette (Linear / Raycast / Zinc Obsidian) */
-  --bg-primary: #09090b;
-  --bg-secondary: #111114;
-  --bg-tertiary: #1a1a1f;
-  --bg-card: #131316;
-  --bg-card-hover: #18181d;
-  --bg-surface: #16161a;
-  --bg-input: #0c0c0e;
-  --bg-input-focus: #141418;
+  /* Exact Theme Palette */
+  --bg-primary: #080C0A;
+  --bg-secondary: #0B120E;
+  --bg-tertiary: #131E19;
+  --bg-card: #0F1713;
+  --bg-card-hover: #15221C;
+  --bg-surface: #0F1713;
+  --bg-input: #080D0A;
+  --bg-input-focus: #0F1713;
   
   /* Crisp Border Tokens */
-  --border-subtle: #232328;
-  --border-medium: #303038;
-  --border-strong: #42424d;
-  --border-focus: #3b82f6;
+  --border-subtle: #1B3025;
+  --border-medium: #274535;
+  --border-strong: #385E4B;
+  --border-focus: #22C55E;
 
   /* Typography Palette */
-  --text-primary: #f4f4f5;
-  --text-secondary: #9d9da6;
-  --text-muted: #63636e;
-  --text-inverse: #09090b;
+  --text-primary: #F0FDF4;
+  --text-secondary: #86A08F;
+  --text-muted: #5B7364;
+  --text-inverse: #080C0A;
 
   /* Refined Semantic Accents */
-  --accent-blue: #3b82f6;
-  --accent-blue-hover: #2563eb;
-  --accent-blue-subtle: rgba(59, 130, 246, 0.08);
+  --accent-blue: #22C55E;
+  --accent-blue-hover: #16A34A;
+  --accent-blue-subtle: rgba(34, 197, 94, 0.12);
   
-  --accent-cyan: #06b6d4;
-  --accent-cyan-subtle: rgba(6, 182, 212, 0.08);
+  --accent-cyan: #14B8A6;
+  --accent-cyan-subtle: rgba(20, 184, 166, 0.12);
 
-  --accent-emerald: #10b981;
-  --accent-emerald-subtle: rgba(16, 185, 129, 0.08);
+  --accent-emerald: #84CC16;
+  --accent-emerald-subtle: rgba(132, 204, 22, 0.12);
 
-  --accent-amber: #f59e0b;
-  --accent-amber-subtle: rgba(245, 158, 11, 0.08);
+  --accent-amber: #EAB308;
+  --accent-amber-subtle: rgba(234, 179, 8, 0.12);
 
-  --accent-rose: #f43f5e;
-  --accent-rose-subtle: rgba(244, 63, 94, 0.08);
+  --accent-rose: #F43F5E;
+  --accent-rose-subtle: rgba(244, 63, 94, 0.12);
 
-  --accent-purple: #8b5cf6;
-  --accent-purple-subtle: rgba(139, 92, 246, 0.08);
+  --accent-purple: #A855F7;
+  --accent-purple-subtle: rgba(168, 85, 247, 0.12);
 
   /* Layout dimensions */
   --sidebar-width: 250px;

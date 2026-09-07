@@ -55,8 +55,8 @@ export const Tabs: React.FC<TabsProps> = ({ tabs, activeTab, onChange }) => {
                   fontWeight: 500,
                   padding: '0.05rem 0.4rem',
                   borderRadius: 'var(--radius-full)',
-                  backgroundColor: isActive ? 'var(--accent-blue-subtle)' : 'rgba(255, 255, 255, 0.06)',
-                  color: isActive ? '#93c5fd' : 'var(--text-muted)',
+                  backgroundColor: isActive ? 'var(--accent-blue-subtle)' : 'var(--bg-tertiary)',
+                  color: isActive ? 'var(--accent-blue)' : 'var(--text-muted)',
                 }}
               >
                 {tab.count}
