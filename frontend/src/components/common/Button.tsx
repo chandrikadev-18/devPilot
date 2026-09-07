@@ -24,7 +24,7 @@ export const Button: React.FC<ButtonProps> = ({
       case 'primary':
         return {
           backgroundColor: 'var(--accent-blue)',
-          color: '#080C0A',
+          color: '#ffffff',
           fontWeight: 600,
           border: '1px solid rgba(255, 255, 255, 0.1)',
           boxShadow: 'var(--shadow-sm)',
@@ -50,8 +50,8 @@ export const Button: React.FC<ButtonProps> = ({
         };
       case 'success':
         return {
-          backgroundColor: 'var(--accent-emerald)',
-          color: '#080C0A',
+          backgroundColor: 'var(--accent-cyan)',
+          color: '#ffffff',
           fontWeight: 600,
           border: '1px solid rgba(255, 255, 255, 0.1)',
         };
