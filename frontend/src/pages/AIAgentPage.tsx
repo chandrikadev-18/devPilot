@@ -41,9 +41,16 @@ export const AIAgentPage: React.FC = () => {
   ]);
   const [inputQuery, setInputQuery] = useState('');
   const [provider, setProvider] = useState<string>('groq');
-  const [model, setModel] = useState<string>('llama-3.3-70b-versatile');
+  const [model, setModel] = useState<string>('openai/gpt-oss-120b');
   const [isAsking, setIsAsking] = useState(false);
   const { showToast } = useToast();
+
+  const availableModels = [
+    { value: 'openai/gpt-oss-120b', label: 'openai/gpt-oss-120b (Recommended)' },
+    { value: 'openai/gpt-oss-20b', label: 'openai/gpt-oss-20b (Fast)' },
+    { value: 'qwen/qwen3.6-27b', label: 'qwen/qwen3.6-27b' },
+    { value: 'qwen/qwen3.8-27b', label: 'qwen/qwen3.8-27b' },
+  ];
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,7 +125,28 @@ export const AIAgentPage: React.FC = () => {
             Autonomous multi-turn reasoning with validated tool use and verified source citations.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Model:</span>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              style={{
+                backgroundColor: 'var(--bg-input)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                padding: '0.35rem 0.6rem',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem',
+              }}
+            >
+              {availableModels.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <Button
             variant="ghost"
             size="sm"

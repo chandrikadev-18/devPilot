@@ -4104,5 +4104,525 @@
       "duration_ms": 409.11
     },
     "error": null
+  },
+  "op_scan_20260905_161942_3ef94f": {
+    "operation_id": "op_scan_20260905_161942_3ef94f",
+    "project_id": "proj_scan_graph_target_464b99",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-05T16:19:42.541423+00:00",
+    "completed_at": "2026-09-05T16:19:42.565434+00:00",
+    "result": {
+      "project_name": "Scan Graph Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-206/test_api_project_scan_and_grap0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 2.19
+    },
+    "error": null
+  },
+  "op_graph_build_20260905_161942_04b2a3": {
+    "operation_id": "op_graph_build_20260905_161942_04b2a3",
+    "project_id": "proj_scan_graph_target_464b99",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-09-05T16:19:42.599778+00:00",
+    "completed_at": "2026-09-05T16:19:42.636903+00:00",
+    "result": {
+      "project_id": "proj_scan_graph_target_464b99",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 17.11
+    },
+    "error": null
+  },
+  "op_review_20260905_161943_829766": {
+    "operation_id": "op_review_20260905_161943_829766",
+    "project_id": "proj_review_target_a10601",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-09-05T16:19:43.580786+00:00",
+    "completed_at": "2026-09-05T16:19:44.129514+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 529.59
+    },
+    "error": null
+  },
+  "op_scan_20260905_161945_dc0346": {
+    "operation_id": "op_scan_20260905_161945_dc0346",
+    "project_id": "proj_cli_test_project_ac3ad9",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-05T16:19:45.530717+00:00",
+    "completed_at": "2026-09-05T16:19:45.552714+00:00",
+    "result": {
+      "project_name": "CLI Test Project",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-206/test_cli_project_add_and_info0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 2.41
+    },
+    "error": null
+  },
+  "op_graph_build_20260905_161945_305ead": {
+    "operation_id": "op_graph_build_20260905_161945_305ead",
+    "project_id": "proj_cli_test_project_ac3ad9",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-09-05T16:19:45.568883+00:00",
+    "completed_at": "2026-09-05T16:19:45.599473+00:00",
+    "result": {
+      "project_id": "proj_cli_test_project_ac3ad9",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 10.52
+    },
+    "error": null
+  },
+  "op_review_20260905_161945_020db1": {
+    "operation_id": "op_review_20260905_161945_020db1",
+    "project_id": "proj_cli_test_project_ac3ad9",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-09-05T16:19:45.619073+00:00",
+    "completed_at": "2026-09-05T16:19:46.073205+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 438.9
+    },
+    "error": null
+  },
+  "op_scan_20260906_164820_be8e21": {
+    "operation_id": "op_scan_20260906_164820_be8e21",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T16:48:20.835821+00:00",
+    "completed_at": "2026-09-06T16:48:21.097013+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-206/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 106.95
+    },
+    "error": null
+  },
+  "op_agent_20260906_164850_8321e8": {
+    "operation_id": "op_agent_20260906_164850_8321e8",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "agent",
+    "status": "FAILED",
+    "started_at": "2026-09-06T16:48:50.650957+00:00",
+    "completed_at": "2026-09-06T16:48:59.730036+00:00",
+    "result": null,
+    "error": "Groq API communication error: Error code: 404 - {'error': {'message': 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}"
+  },
+  "op_scan_20260906_165522_23616e": {
+    "operation_id": "op_scan_20260906_165522_23616e",
+    "project_id": "proj_scan_graph_target_a31fca",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T16:55:22.970151+00:00",
+    "completed_at": "2026-09-06T16:55:22.984156+00:00",
+    "result": {
+      "project_name": "Scan Graph Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-207/test_api_project_scan_and_grap0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 1.82
+    },
+    "error": null
+  },
+  "op_graph_build_20260906_165523_195e2c": {
+    "operation_id": "op_graph_build_20260906_165523_195e2c",
+    "project_id": "proj_scan_graph_target_a31fca",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T16:55:23.037154+00:00",
+    "completed_at": "2026-09-06T16:55:23.077152+00:00",
+    "result": {
+      "project_id": "proj_scan_graph_target_a31fca",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 27.92
+    },
+    "error": null
+  },
+  "op_review_20260906_165524_413c3c": {
+    "operation_id": "op_review_20260906_165524_413c3c",
+    "project_id": "proj_review_target_da82a8",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T16:55:24.290909+00:00",
+    "completed_at": "2026-09-06T16:55:25.095453+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 782.34
+    },
+    "error": null
+  },
+  "op_scan_20260906_165527_007f7d": {
+    "operation_id": "op_scan_20260906_165527_007f7d",
+    "project_id": "proj_cli_test_project_fdefca",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T16:55:27.262008+00:00",
+    "completed_at": "2026-09-06T16:55:27.285008+00:00",
+    "result": {
+      "project_name": "CLI Test Project",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-207/test_cli_project_add_and_info0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 2.01
+    },
+    "error": null
+  },
+  "op_graph_build_20260906_165527_35b163": {
+    "operation_id": "op_graph_build_20260906_165527_35b163",
+    "project_id": "proj_cli_test_project_fdefca",
+    "operation_type": "graph_build",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T16:55:27.311058+00:00",
+    "completed_at": "2026-09-06T16:55:27.369819+00:00",
+    "result": {
+      "project_id": "proj_cli_test_project_fdefca",
+      "total_nodes": 5,
+      "total_edges": 7,
+      "files": 2,
+      "classes": 1,
+      "functions": 1,
+      "duration_ms": 35.87
+    },
+    "error": null
+  },
+  "op_review_20260906_165527_b51981": {
+    "operation_id": "op_review_20260906_165527_b51981",
+    "project_id": "proj_cli_test_project_fdefca",
+    "operation_type": "review",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T16:55:27.450008+00:00",
+    "completed_at": "2026-09-06T16:55:28.243955+00:00",
+    "result": {
+      "branch": "master",
+      "base_branch": "master",
+      "is_clean": true,
+      "status": {
+        "branch": "master",
+        "base_branch": "master",
+        "is_clean": true,
+        "modified_files": [],
+        "added_files": [],
+        "deleted_files": [],
+        "renamed_files": [],
+        "untracked_files": [],
+        "staged_files": [],
+        "unstaged_files": [],
+        "ahead_commits": 0,
+        "behind_commits": 0
+      },
+      "changed_files": [],
+      "changed_symbols": [],
+      "impact": {
+        "direct": [],
+        "indirect": [],
+        "files": [],
+        "total_affected_symbols": 0
+      },
+      "risk": {
+        "score": 0,
+        "level": "LOW",
+        "reasons": [
+          "Clean repository: No uncommitted changes to review."
+        ]
+      },
+      "recommended_tests": [],
+      "test_recommendations": [],
+      "diff_stats": {
+        "additions": 0,
+        "deletions": 0
+      },
+      "diff_summary": "",
+      "review_notes": [
+        "Working tree is clean. No unstaged or staged modifications."
+      ],
+      "summary": "Working tree is clean. No local modifications to review.",
+      "duration_ms": 761.98
+    },
+    "error": null
+  },
+  "op_scan_20260906_171028_2184f3": {
+    "operation_id": "op_scan_20260906_171028_2184f3",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-06T17:10:28.666808+00:00",
+    "completed_at": "2026-09-06T17:10:28.740011+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-206/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 28.3
+    },
+    "error": null
+  },
+  "op_scan_20260907_154204_b00ccf": {
+    "operation_id": "op_scan_20260907_154204_b00ccf",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "scan",
+    "status": "RUNNING",
+    "started_at": "2026-09-07T15:42:04.045046+00:00",
+    "completed_at": null,
+    "result": null,
+    "error": null
+  },
+  "op_scan_20260907_154204_1eb36e": {
+    "operation_id": "op_scan_20260907_154204_1eb36e",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "scan",
+    "status": "COMPLETED",
+    "started_at": "2026-09-07T15:42:04.106874+00:00",
+    "completed_at": "2026-09-07T15:42:04.200834+00:00",
+    "result": {
+      "project_name": "Delete Target",
+      "project_path": "C:/Users/inspi/AppData/Local/Temp/pytest-of-inspi/pytest-206/test_api_delete_project0",
+      "total_files": 2,
+      "total_dirs": 3,
+      "extensions": {
+        ".py": 2
+      },
+      "files_count": 2,
+      "duration_ms": 39.0
+    },
+    "error": null
+  },
+  "op_agent_20260907_155829_765f6c": {
+    "operation_id": "op_agent_20260907_155829_765f6c",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "agent",
+    "status": "FAILED",
+    "started_at": "2026-09-07T15:58:29.080079+00:00",
+    "completed_at": "2026-09-07T15:58:35.906203+00:00",
+    "result": null,
+    "error": "Groq API communication error: Error code: 404 - {'error': {'message': 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}"
+  },
+  "op_agent_20260907_160521_4a9d59": {
+    "operation_id": "op_agent_20260907_160521_4a9d59",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "agent",
+    "status": "FAILED",
+    "started_at": "2026-09-07T16:05:21.347952+00:00",
+    "completed_at": "2026-09-07T16:05:26.313768+00:00",
+    "result": null,
+    "error": "Groq API communication error: Error code: 404 - {'error': {'message': 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}"
+  },
+  "op_agent_20260907_160632_0fb262": {
+    "operation_id": "op_agent_20260907_160632_0fb262",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "agent",
+    "status": "FAILED",
+    "started_at": "2026-09-07T16:06:32.969811+00:00",
+    "completed_at": "2026-09-07T16:06:38.942300+00:00",
+    "result": null,
+    "error": "Groq API communication error: Error code: 404 - {'error': {'message': 'The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}"
+  },
+  "op_agent_20260907_160919_f5bcdf": {
+    "operation_id": "op_agent_20260907_160919_f5bcdf",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "agent",
+    "status": "COMPLETED",
+    "started_at": "2026-09-07T16:09:19.746689+00:00",
+    "completed_at": "2026-09-07T16:09:25.451886+00:00",
+    "result": {
+      "project_id": "proj_delete_target_839150",
+      "question": "\"What functions call hash_password and what could break if I change it?\"",
+      "answer": "Symbol not found:\nhash_password\n\nSuggestions:\n- Check the symbol name\n- Try a fully qualified name\n- Use graph-info or search-code",
+      "tool_calls": [
+        "{'tool': 'find_symbol', 'arguments': {'symbol_name': 'hash_password'}, 'status': 'success', 'duration_ms': 29.73}"
+      ],
+      "iterations": 2,
+      "duration_ms": 5666.48
+    },
+    "error": null
+  },
+  "op_agent_20260907_160954_a917ca": {
+    "operation_id": "op_agent_20260907_160954_a917ca",
+    "project_id": "proj_delete_target_839150",
+    "operation_type": "agent",
+    "status": "COMPLETED",
+    "started_at": "2026-09-07T16:09:54.164313+00:00",
+    "completed_at": "2026-09-07T16:10:12.341177+00:00",
+    "result": {
+      "project_id": "proj_delete_target_839150",
+      "question": "\"What does GraphBuilder do and where is it defined?\"",
+      "answer": "Answer:\nAnalysis:\nSymbol: GraphBuilder\nFile: app/graph/builder.py\nLines: 1-4\n\nPurpose:\nGraphBuilder is a class that provides functionality to construct or build a graph representation (graph store) for a given project.\n\nKey Responsibilities:\n1. Exposes a `build` method that accepts a `project_path` string.\n2. The `build` method is intended to build the graph store for the specified project (currently returns `True` as a placeholder).\n\nDependencies:\n- None identified within the provided snippet.\n\nImpact:\nUsed by:\n- No callers identified in the current snippet.\n\nEvidence:\n- File: app/graph/builder.py\n  Symbol: GraphBuilder\n  Lines: 1-4\n  Relevant reason: Symbol definition in codebase\n\nConfidence:\nHigh",
+      "tool_calls": [
+        "{'tool': 'find_symbol', 'arguments': {'symbol_name': 'GraphBuilder'}, 'status': 'success', 'duration_ms': 7.54}"
+      ],
+      "iterations": 2,
+      "duration_ms": 18139.51
+    },
+    "error": null
   }
 }
