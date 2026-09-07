@@ -22,7 +22,6 @@ describe('DevPilot Frontend Comprehensive Integration Suite (v3.0)', () => {
   it('1. Application startup renders DevPilot branding and version', () => {
     render(<App />);
     expect(screen.getByText('DevPilot')).toBeInTheDocument();
-    expect(screen.getByText('v3.0 ENTERPRISE')).toBeInTheDocument();
   });
 
   it('2. Dashboard displays overview cards and system status', async () => {

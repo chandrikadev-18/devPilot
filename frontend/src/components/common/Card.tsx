@@ -47,20 +47,20 @@ export const Card: React.FC<CardProps> = ({
             justifyContent: 'space-between',
             alignItems: 'flex-start',
             borderBottom: subtitle || children ? '1px solid var(--border-subtle)' : 'none',
-            paddingBottom: subtitle || children ? '0.75rem' : '0',
-            marginBottom: '0.25rem',
+            paddingBottom: subtitle || children ? '0.65rem' : '0',
+            marginBottom: '0.15rem',
           }}
         >
           <div>
             {typeof title === 'string' ? (
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
                 {title}
               </h3>
             ) : (
               title
             )}
             {subtitle && (
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+              <p style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
                 {subtitle}
               </p>
             )}

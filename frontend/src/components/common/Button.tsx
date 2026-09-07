@@ -25,6 +25,7 @@ export const Button: React.FC<ButtonProps> = ({
         return {
           backgroundColor: 'var(--accent-blue)',
           color: '#ffffff',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           boxShadow: 'var(--shadow-sm)',
         };
       case 'secondary':
@@ -43,16 +44,19 @@ export const Button: React.FC<ButtonProps> = ({
         return {
           backgroundColor: 'var(--accent-rose)',
           color: '#ffffff',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
         };
       case 'success':
         return {
           backgroundColor: 'var(--accent-emerald)',
           color: '#ffffff',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
         };
       case 'ghost':
         return {
           backgroundColor: 'transparent',
           color: 'var(--text-secondary)',
+          border: '1px solid transparent',
         };
       default:
         return {};

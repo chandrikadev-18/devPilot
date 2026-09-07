@@ -200,30 +200,31 @@ export const AIAgentPage: React.FC = () => {
             >
               <div
                 style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  backgroundColor: msg.sender === 'user' ? 'var(--accent-blue)' : 'var(--bg-tertiary)',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: msg.sender === 'user' ? 'var(--bg-tertiary)' : 'var(--accent-blue-subtle)',
+                  border: '1px solid var(--border-subtle)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: msg.sender === 'user' ? '#ffffff' : 'var(--accent-cyan)',
+                  color: msg.sender === 'user' ? 'var(--text-primary)' : 'var(--accent-blue)',
                   flexShrink: 0,
                   marginTop: '2px',
                 }}
               >
-                {msg.sender === 'user' ? <User size={16} /> : <Bot size={18} />}
+                {msg.sender === 'user' ? <User size={15} /> : <Bot size={15} />}
               </div>
 
               <div
                 style={{
-                  padding: '0.85rem 1.1rem',
+                  padding: '0.75rem 1rem',
                   borderRadius: 'var(--radius-md)',
-                  backgroundColor: msg.sender === 'user' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(30, 41, 59, 0.65)',
-                  border: `1px solid ${msg.sender === 'user' ? 'rgba(59, 130, 246, 0.3)' : 'var(--border-subtle)'}`,
+                  backgroundColor: msg.sender === 'user' ? 'var(--bg-tertiary)' : 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
                   color: 'var(--text-primary)',
-                  fontSize: '0.9rem',
-                  lineHeight: 1.5,
+                  fontSize: '0.875rem',
+                  lineHeight: 1.55,
                   whiteSpace: 'pre-wrap',
                 }}
               >
@@ -231,8 +232,8 @@ export const AIAgentPage: React.FC = () => {
 
                 {/* Tool calls activity breakdown */}
                 {msg.toolCalls && msg.toolCalls.length > 0 && (
-                  <div style={{ marginTop: '0.85rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.6rem' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <div style={{ marginTop: '0.75rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
+                    <div style={{ fontSize: '0.725rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                       <Terminal size={12} />
                       <span>Tools Executed ({msg.toolCalls.length}):</span>
                     </div>
@@ -244,9 +245,9 @@ export const AIAgentPage: React.FC = () => {
                             fontSize: '0.725rem',
                             padding: '0.15rem 0.5rem',
                             borderRadius: 'var(--radius-sm)',
-                            backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                            backgroundColor: 'var(--bg-input)',
                             border: '1px solid var(--border-subtle)',
-                            color: 'var(--accent-cyan)',
+                            color: 'var(--text-secondary)',
                           }}
                         >
                           {typeof tc === 'string' ? tc : tc.tool || tc.name}

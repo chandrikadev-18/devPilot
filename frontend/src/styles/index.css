@@ -1,46 +1,64 @@
 :root {
-  --bg-primary: #090d16;
-  --bg-secondary: #0f172a;
-  --bg-tertiary: #1e293b;
-  --bg-card: rgba(15, 23, 42, 0.75);
-  --bg-card-hover: rgba(30, 41, 59, 0.85);
-  --bg-surface: #1e293b;
-  --bg-input: #0b1120;
+  /* Surface & Background Palette (Linear / Raycast / Zinc Obsidian) */
+  --bg-primary: #09090b;
+  --bg-secondary: #111114;
+  --bg-tertiary: #1a1a1f;
+  --bg-card: #131316;
+  --bg-card-hover: #18181d;
+  --bg-surface: #16161a;
+  --bg-input: #0c0c0e;
+  --bg-input-focus: #141418;
   
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-medium: rgba(255, 255, 255, 0.15);
+  /* Crisp Border Tokens */
+  --border-subtle: #232328;
+  --border-medium: #303038;
+  --border-strong: #42424d;
   --border-focus: #3b82f6;
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-inverse: #0f172a;
+  /* Typography Palette */
+  --text-primary: #f4f4f5;
+  --text-secondary: #9d9da6;
+  --text-muted: #63636e;
+  --text-inverse: #09090b;
 
+  /* Refined Semantic Accents */
   --accent-blue: #3b82f6;
   --accent-blue-hover: #2563eb;
-  --accent-blue-glow: rgba(59, 130, 246, 0.25);
+  --accent-blue-subtle: rgba(59, 130, 246, 0.08);
   
   --accent-cyan: #06b6d4;
+  --accent-cyan-subtle: rgba(6, 182, 212, 0.08);
+
   --accent-emerald: #10b981;
+  --accent-emerald-subtle: rgba(16, 185, 129, 0.08);
+
   --accent-amber: #f59e0b;
+  --accent-amber-subtle: rgba(245, 158, 11, 0.08);
+
   --accent-rose: #f43f5e;
-  --accent-purple: #a855f7;
+  --accent-rose-subtle: rgba(244, 63, 94, 0.08);
 
-  --sidebar-width: 260px;
-  --header-height: 64px;
+  --accent-purple: #8b5cf6;
+  --accent-purple-subtle: rgba(139, 92, 246, 0.08);
+
+  /* Layout dimensions */
+  --sidebar-width: 250px;
+  --header-height: 56px;
   
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* Modern Typography Stack */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* Radii */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
   --radius-full: 9999px;
 
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  /* Shadows & Elevation */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 20px -2px var(--accent-blue-glow);
 }
 
 * {
@@ -81,27 +99,27 @@ input, textarea, select {
 
 /* Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: rgba(255, 255, 255, 0.24);
 }
 
 /* Glassmorphic card styling */
 .glass-panel {
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .glass-panel:hover {
@@ -112,9 +130,7 @@ input, textarea, select {
 .app-container {
   display: flex;
   min-height: 100vh;
-  background: radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.04) 0%, transparent 40%),
-              radial-gradient(circle at 90% 80%, rgba(168, 85, 247, 0.04) 0%, transparent 40%),
-              var(--bg-primary);
+  background-color: var(--bg-primary);
 }
 
 .main-content {
@@ -127,7 +143,7 @@ input, textarea, select {
 }
 
 .page-wrapper {
-  padding: 2rem;
+  padding: 2rem 2.5rem;
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
@@ -138,26 +154,28 @@ input, textarea, select {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 2rem;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .page-title {
-  font-size: 1.75rem;
+  font-size: 1.625rem;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
 }
 
 .page-subtitle {
   color: var(--text-secondary);
-  font-size: 0.95rem;
-  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  margin-top: 0.35rem;
+  line-height: 1.45;
 }
 
 .grid-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 /* Responsive */

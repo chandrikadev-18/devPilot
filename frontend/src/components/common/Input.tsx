@@ -50,11 +50,11 @@ export const Input: React.FC<InputProps> = ({
             backgroundColor: 'var(--bg-input)',
             border: `1px solid ${error ? 'var(--accent-rose)' : 'var(--border-subtle)'}`,
             borderRadius: 'var(--radius-md)',
-            padding: leftIcon ? '0.55rem 0.75rem 0.55rem 2.25rem' : '0.55rem 0.75rem',
+            padding: leftIcon ? '0.45rem 0.75rem 0.45rem 2.25rem' : '0.45rem 0.75rem',
             color: 'var(--text-primary)',
-            fontSize: '0.875rem',
+            fontSize: '0.85rem',
             outline: 'none',
-            transition: 'border-color 0.15s ease',
+            transition: 'all 0.15s ease',
           }}
           className={className}
           {...props}
